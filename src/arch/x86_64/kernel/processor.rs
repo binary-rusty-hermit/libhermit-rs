@@ -751,9 +751,6 @@ pub fn configure() {
 		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LME | EFER_LMA | EFER_SCE | EFER_NXE);
 	}
 
-	infoheader!(" We are here! ");
-	infofooter!();
-
 	//
 	// CR0 CONFIGURATION
 	//
@@ -868,6 +865,7 @@ pub fn print_information() {
 		"Supports 1GiB Pages",
 		if supports_1gib_pages() { "Yes" } else { "No" }
 	);
+	infoentry!("we are working");
 	infofooter!();
 }
 
