@@ -751,6 +751,8 @@ pub fn configure() {
 		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LMA | EFER_SCE | EFER_NXE);
 	}
 
+	println!("Here\n\n");
+
 	//
 	// CR0 CONFIGURATION
 	//
