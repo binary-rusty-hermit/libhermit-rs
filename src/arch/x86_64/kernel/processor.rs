@@ -748,7 +748,7 @@ pub fn detect_features() {
 pub fn configure() {
 	// setup MSR EFER
 	unsafe {
-		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LMA | EFER_SCE | EFER_NXE);
+		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LME | EFER_LMA | EFER_SCE | EFER_NXE);
 	}
 
 	println!("Here\n\n");
