@@ -85,6 +85,8 @@ pub fn init() {
 			.align_up_to_large_page();
 	}
 
+        info!("XXXX Image size: {}", environment::get_image_size());
+
 	arch::mm::init();
 	arch::mm::init_page_tables();
 
@@ -150,7 +152,10 @@ pub fn init() {
 		// the virtual address space.
 
 		let virt_size: usize = {
-			let size = total_memory_size() - kernel_end_address().as_usize() - reserved_space;
+                        // Heap to take around 20% of total memory
+			let size = ((total_memory_size()
+                                           - kernel_end_address().as_usize()
+                                           - reserved_space) * 20) / 100;
 
 			// we reserve 10% of the memory for stack allocations
 			align_down!(size - (size * 10) / 100, LargePageSize::SIZE)
