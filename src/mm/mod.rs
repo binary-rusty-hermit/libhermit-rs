@@ -136,6 +136,7 @@ pub fn init() {
 		);
 		info!("User-space heap size: {} MB", user_heap_size >> 20);
 
+                // Location of user heap
 		map_addr = kernel_heap_end();
 		map_size = user_heap_size;
 		unsafe {
@@ -161,6 +162,7 @@ pub fn init() {
 			align_down!(size - (size * 10) / 100, LargePageSize::SIZE)
 		};
 
+                // Start address of heap
 		let virt_addr = if has_1gib_pages && virt_size > HugePageSize::SIZE {
 			arch::mm::virtualmem::allocate_aligned(
 				align_up!(virt_size, HugePageSize::SIZE),
@@ -189,6 +191,7 @@ pub fn init() {
 			counter = map_heap::<LargePageSize>(virt_addr, LargePageSize::SIZE);
 		}
 
+                // Heap start address defined here
 		unsafe {
 			HEAP_START_ADDRESS = virt_addr;
 			crate::ALLOCATOR
