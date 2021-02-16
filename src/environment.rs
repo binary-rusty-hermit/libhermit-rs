@@ -12,7 +12,7 @@
 #[cfg(target_arch = "x86_64")]
 pub use crate::arch::x86_64::kernel::{
 	get_base_address, get_cmdline, get_cmdsize, get_image_size, get_tls_filesz, get_tls_memsz,
-	get_tls_start, is_single_kernel, is_uhyve,
+	get_tls_start, is_single_kernel, is_uhyve, get_app_size, get_app_start, get_app_entry_point,
 };
 
 #[cfg(target_arch = "aarch64")]

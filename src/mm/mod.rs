@@ -86,6 +86,9 @@ pub fn init() {
 	}
 
         info!("XXXX Image size: {}", environment::get_image_size());
+        info!("Boot info app_size: 0x{:x}", environment::get_app_size());
+        info!("Boot info app_start: 0x{:x}", environment::get_app_start());
+        info!("Boot info app_entry_point: 0x{:x}", environment::get_app_entry_point());
 
 	arch::mm::init();
 	arch::mm::init_page_tables();

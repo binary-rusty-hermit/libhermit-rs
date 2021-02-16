@@ -87,6 +87,9 @@ pub struct BootInfo {
 	hcip: [u8; 4],
 	hcgateway: [u8; 4],
 	hcmask: [u8; 4],
+        app_size: u64,
+        app_start: usize,
+        app_entry_point: u64,
 }
 
 /// Kernel header to announce machine features
@@ -177,6 +180,20 @@ pub fn get_base_address() -> VirtAddr {
 pub fn get_image_size() -> usize {
 	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).image_size) as usize }
 }
+
+// Functions for application
+pub fn get_app_size() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_size) as usize }
+}
+
+pub fn get_app_start() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_start) as usize }
+}
+
+pub fn get_app_entry_point() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_entry_point) as usize }
+}
+// End of functions for application
 
 pub fn get_limit() -> usize {
 	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).limit) as usize }
