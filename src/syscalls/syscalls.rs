@@ -1,4 +1,5 @@
 use super::*;
+se crate::arch_prctl::sys_arch_prctl;
 
 const SYS_READ: usize = 0;
 const SYS_WRITE: usize = 1;
@@ -32,9 +33,17 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
                         state.rax = sys_close(state.rdi as i32) as usize;
                         },
 
+		SYS_LSEEK => {
+                        state.rax = sys_lseek(state.rdi as i32, state.rsi as isize, state.rdx as i32) as usize;
+                        },
+
 		SYS_EXIT => {
                         state.rax = sys_exit(state.rdi as i32);
                         },
+
+		SYS_ARCH_PRCTL => {
+                        state.rax = sys_arch_prctl(state.rdi, state.rsi as *mut usize);
+                }
 
 		 _ => println!("Rax was: {}, Not implemented", state.rax),
         }

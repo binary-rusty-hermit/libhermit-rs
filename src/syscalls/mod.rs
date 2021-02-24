@@ -26,6 +26,7 @@ pub use self::tasks::*;
 pub use self::timer::*;
 
 pub mod syscalls;
+pub mod arch_prctl; 
 
 mod condvar;
 pub mod fs;
