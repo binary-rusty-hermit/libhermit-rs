@@ -15,8 +15,18 @@ const SYS_ARCH_PRCTL: usize = 158;
 
 #[no_mangle]
 pub unsafe extern "C" fn syscall_handler(state: &mut State) {
-                println!("Rax was: {}", state.rax);
-		state.rax = 0 as usize;
+	match state.rax {
+                SYS_READ => {
+                        state.rax = sys_read(state.rdi as i32, state.rsi as *mut u8, state.rdx) as usize;
+                        },
+
+                SYS_WRITE => {
+                        state.rax = sys_write(state.rdi as i32, state.rsi as *const u8, state.rdx) as usize;
+                        },
+
+		 _ => println!("Rax was: {}, Not implemented", state.rax),
+        }
+
 }
 
 /*
