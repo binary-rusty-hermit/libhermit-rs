@@ -24,6 +24,18 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
                         state.rax = sys_write(state.rdi as i32, state.rsi as *const u8, state.rdx) as usize;
                         },
 
+		 SYS_OPEN => {
+                        state.rax = sys_open(state.rdi as *const u8, state.rsi as i32, state.rdx as i32) as usize;
+                        },
+
+                SYS_CLOSE => {
+                        state.rax = sys_close(state.rdi as i32) as usize;
+                        },
+
+		SYS_EXIT => {
+                        state.rax = sys_exit(state.rdi as i32);
+                        },
+
 		 _ => println!("Rax was: {}, Not implemented", state.rax),
         }
 

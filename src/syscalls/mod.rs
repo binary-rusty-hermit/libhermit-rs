@@ -25,6 +25,8 @@ pub use self::system::*;
 pub use self::tasks::*;
 pub use self::timer::*;
 
+pub mod syscalls;
+
 mod condvar;
 pub mod fs;
 mod interfaces;
@@ -36,7 +38,7 @@ mod recmutex;
 mod semaphore;
 mod spinlock;
 mod system;
-mod tasks;
+pub mod tasks;
 mod timer;
 
 #[cfg(feature = "newlib")]
