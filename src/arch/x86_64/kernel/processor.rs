@@ -21,6 +21,12 @@ use core::convert::TryInto;
 use core::sync::atomic::spin_loop_hint;
 use core::{fmt, u32};
 
+global_asm!(include_str!("isyscall.s"));
+
+extern "C" {
+        fn isyscall();
+}
+
 const IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP: u64 = 1 << 16;
 const IA32_MISC_ENABLE_SPEEDSTEP_LOCK: u64 = 1 << 20;
 const IA32_MISC_ENABLE_TURBO_DISABLE: u64 = 1 << 38;
@@ -34,6 +40,28 @@ const EFER_SVME: u64 = 1 << 12;
 const EFER_LMSLE: u64 = 1 << 13;
 const EFER_FFXSR: u64 = 1 << 14;
 const EFER_TCE: u64 = 1 << 15;
+
+// MSR EFER bits
+const EFER_SCE: u64 = 1 << 0;
+const EFER_LME: u64 = 1 << 8;
+const EFER_LMA: u64 = 1 << 10;
+const EFER_NXE: u64 = 1 << 11;
+const EFER_SVME: u64 = 1 << 12;
+const EFER_LMSLE: u64 = 1 << 13;
+const EFER_FFXSR: u64 = 1 << 14;
+const EFER_TCE: u64 = 1 << 15;
+
+// MSR registers
+const MSR_STAR: u32 = 0xc0000081;
+const MSR_LSTAR: u32 = 0xc0000082;
+const MSR_SYSCALL_MASK: u32 = 0xc0000084;
+
+// EFLAG bits
+const EFLAGS_TF: u64 = 1 <<  8; /* Trap Flag */
+const EFLAGS_IF: u64 = 1 << 9; /* Interrupt Flag */
+const EFLAGS_DF: u64 = 1 << 10; /* Direction Flag */
+const EFLAGS_NT: u64 = 1 << 14; /* Nested Task */
+const EFLAGS_AC: u64 = 1 << 18; /* Alignment Check/Access Control */
 
 static mut CPU_FREQUENCY: CpuFrequency = CpuFrequency::new();
 static mut CPU_SPEEDSTEP: CpuSpeedStep = CpuSpeedStep::new();
@@ -747,9 +775,19 @@ pub fn detect_features() {
 
 pub fn configure() {
 	// setup MSR EFER
-	unsafe {
-		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LME | EFER_LMA | EFER_SCE | EFER_NXE);
-	}
+        unsafe {
+                wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LMA | EFER_SCE | EFER_NXE);
+                wrmsr(MSR_STAR, (0x0b << 48) | (0x08 << 32));
+
+                //let x : u64 = rdmsr(IA32_EFER);
+                //info!("IA32_EFER = {}", x);
+
+                let pointer : u64;
+                pointer = isyscall as u64;
+
+                wrmsr(MSR_LSTAR, pointer);
+                wrmsr(MSR_SYSCALL_MASK, EFLAGS_TF|EFLAGS_DF|EFLAGS_IF|EFLAGS_AC|EFLAGS_NT);
+	}	
 
 	//
 	// CR0 CONFIGURATION
