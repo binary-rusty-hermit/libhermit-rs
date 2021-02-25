@@ -865,7 +865,6 @@ pub fn print_information() {
 		"Supports 1GiB Pages",
 		if supports_1gib_pages() { "Yes" } else { "No" }
 	);
-	infoentry!("we are working");
 	infofooter!();
 }
 
