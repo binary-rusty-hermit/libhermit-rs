@@ -28,6 +28,9 @@ const UHYVE_PORT_LSEEK: u16 = 0x580;
 const UHYVE_PORT_CMDSIZE: u16 = 0x740;
 const UHYVE_PORT_CMDVAL: u16 = 0x780;
 const UHYVE_PORT_UNLINK: u16 = 0x840;
+const UHYVE_PORT_READLINK: u16 = 0x880;
+const UHYVE_PORT_FSTAT: u16 = 0x900;
+const UHYVE_PORT_STAT: u16 = 0x940;
 
 #[cfg(feature = "newlib")]
 extern "C" {
@@ -183,6 +186,83 @@ impl SysLseek {
 	fn new(fd: i32, offset: isize, whence: i32) -> SysLseek {
 		SysLseek { fd, offset, whence }
 	}
+}
+
+#[repr(C, packed)]
+struct SysReadlink {
+        pathname: PhysAddr,
+        buf: *const u8,
+        len: usize,
+        ret: isize,
+}
+
+impl SysReadlink {
+        fn new(pathname: VirtAddr, buf: *const u8, len: usize) -> SysReadlink {
+                SysReadlink {
+                        pathname: paging::virtual_to_physical(pathname),
+                        buf,
+                        len,
+                        ret: -1,
+                }
+        }
+}
+
+#[repr(C)]
+struct timespec {
+    pub tv_sec: i64,
+    pub tv_nsec: i32,
+}
+
+#[repr(C)]
+struct stat {
+    pub st_dev: u64,
+    pub st_ino: u64,
+    pub st_nlink: u64,
+    pub st_mode: u32,
+    pub st_uid: u32,
+    pub st_gid: u32,
+    pub st_rdev: u64,
+    pub st_size: i64,
+    pub st_blksize: i32,
+    pub st_blocks: i64,
+    pub st_atim: timespec,
+    pub st_mtim: timespec,
+    pub st_ctim: timespec,
+    // some fields omitted
+}
+
+#[repr(C, packed)]
+struct SysFstat {
+        fd: i32,
+        st: *mut stat,
+        ret: i32,
+}
+
+impl SysFstat {
+        fn new(fd: i32, st: usize) -> SysFstat {
+                SysFstat {
+                        fd,
+                        st: st as *mut stat,
+                        ret: -1,
+                }
+        }
+}
+
+#[repr(C, packed)]
+struct SysStat {
+        name: PhysAddr,
+        st: *mut stat,
+        ret: i32,
+}
+
+impl SysStat {
+        fn new(name: VirtAddr, st: usize) -> SysStat {
+                SysStat {
+                        name: paging::virtual_to_physical(name),
+                        st: st as *mut stat,
+                        ret: -1,
+                }
+        }
 }
 
 pub struct Uhyve;
@@ -356,4 +436,31 @@ impl SyscallInterface for Uhyve {
 
 		syslseek.offset
 	}
+
+	fn readlink(&self, pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+                println!("here in uhyve readlink");
+                let mut sysreadlink = SysReadlink::new(VirtAddr(pathname as u64), buf, len);
+                uhyve_send(UHYVE_PORT_READLINK, &mut sysreadlink);
+
+                sysreadlink.ret
+        }
+
+        fn fstat(&self, fd: i32, st: usize) -> isize {
+                let mut sysfstat = SysFstat::new(fd, st);
+
+                uhyve_send(UHYVE_PORT_FSTAT, &mut sysfstat);
+
+                sysfstat.ret as isize
+
+        }
+
+        fn stat(&self, name: *const u8, st: usize) -> isize {
+                let mut sysstat = SysStat::new(VirtAddr(name as u64), st);
+
+                uhyve_send(UHYVE_PORT_STAT, &mut sysstat);
+
+                sysstat.ret as isize
+
+        }
+
 }

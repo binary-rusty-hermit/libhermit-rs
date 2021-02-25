@@ -227,11 +227,27 @@ pub extern "C" fn sys_lseek(fd: i32, offset: isize, whence: i32) -> isize {
 	kernel_function!(__sys_lseek(fd, offset, whence))
 }
 
-fn __sys_stat(file: *const u8, st: usize) -> i32 {
-	unsafe { SYS.stat(file, st) }
+fn __sys_stat(file: *const u8, st: usize) -> isize {
+        unsafe { SYS.stat(file, st) }
 }
 
 #[no_mangle]
-pub extern "C" fn sys_stat(file: *const u8, st: usize) -> i32 {
-	kernel_function!(__sys_stat(file, st))
+pub extern "C" fn sys_stat(file: *const u8, st: usize) -> isize {
+        kernel_function!(__sys_stat(file, st))
+}
+
+fn __sys_readlink(pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+        unsafe { SYS.readlink(pathname, buf, len) }
+}
+#[no_mangle]
+pub extern "C" fn sys_readlink(pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+        kernel_function!(__sys_readlink(pathname, buf, len))
+}
+
+fn __sys_fstat(fd: i32, st: usize) -> isize {
+        unsafe { SYS.fstat(fd, st) }
+}
+#[no_mangle]
+pub extern "C" fn sys_fstat(fd: i32, st: usize) -> isize {
+        kernel_function!(__sys_fstat(fd, st))
 }

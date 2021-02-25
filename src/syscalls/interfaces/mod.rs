@@ -285,8 +285,18 @@ pub trait SyscallInterface: Send + Sync {
 		ret as isize
 	}
 
-	fn stat(&self, _file: *const u8, _st: usize) -> i32 {
-		info!("stat is unimplemented");
-		-ENOSYS
-	}
+	fn stat(&self, _file: *const u8, _st: usize) -> isize {
+                info!("stat is unimplemented");
+                -ENOSYS as isize
+        }
+
+        fn readlink(&self, _pathname: *const u8, _buf: *mut u8, _len: usize) -> isize {
+                info!("readlink is unimplemented");
+                -ENOSYS as isize
+        }
+
+        fn fstat(&self, _fd: i32, _st: usize) -> isize {
+                info!("fstat is unimplemented");
+                -ENOSYS as isize
+        }
 }

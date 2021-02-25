@@ -33,12 +33,24 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
                         state.rax = sys_close(state.rdi as i32) as usize;
                         },
 
+		SYS_STAT => {
+                        state.rax = sys_stat(state.rdi as *const u8, state.rsi) as usize;
+                        },
+
+                SYS_FSTAT => {
+                        state.rax = sys_fstat(state.rdi as i32, state.rsi) as usize;
+                        },
+
 		SYS_LSEEK => {
                         state.rax = sys_lseek(state.rdi as i32, state.rsi as isize, state.rdx as i32) as usize;
                         },
 
 		SYS_EXIT => {
                         state.rax = sys_exit(state.rdi as i32);
+                        },
+
+		SYS_READLINK => {
+                        state.rax = sys_readlink(state.rdi as *const u8, state.rsi as *mut u8, state.rdx) as usize;
                         },
 
 		SYS_ARCH_PRCTL => {
