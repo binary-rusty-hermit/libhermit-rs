@@ -41,16 +41,6 @@ const EFER_LMSLE: u64 = 1 << 13;
 const EFER_FFXSR: u64 = 1 << 14;
 const EFER_TCE: u64 = 1 << 15;
 
-// MSR EFER bits
-const EFER_SCE: u64 = 1 << 0;
-const EFER_LME: u64 = 1 << 8;
-const EFER_LMA: u64 = 1 << 10;
-const EFER_NXE: u64 = 1 << 11;
-const EFER_SVME: u64 = 1 << 12;
-const EFER_LMSLE: u64 = 1 << 13;
-const EFER_FFXSR: u64 = 1 << 14;
-const EFER_TCE: u64 = 1 << 15;
-
 // MSR registers
 const MSR_STAR: u32 = 0xc0000081;
 const MSR_LSTAR: u32 = 0xc0000082;

@@ -1,5 +1,5 @@
 use super::*;
-se crate::arch_prctl::sys_arch_prctl;
+use crate::arch_prctl::sys_arch_prctl;
 
 const SYS_READ: usize = 0;
 const SYS_WRITE: usize = 1;
