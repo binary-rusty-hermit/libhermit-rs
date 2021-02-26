@@ -438,7 +438,6 @@ impl SyscallInterface for Uhyve {
 	}
 
 	fn readlink(&self, pathname: *const u8, buf: *mut u8, len: usize) -> isize {
-                println!("here in uhyve readlink");
                 let mut sysreadlink = SysReadlink::new(VirtAddr(pathname as u64), buf, len);
                 uhyve_send(UHYVE_PORT_READLINK, &mut sysreadlink);
 
