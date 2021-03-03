@@ -40,7 +40,7 @@ mod semaphore;
 mod spinlock;
 mod system;
 pub mod tasks;
-mod timer;
+pub mod timer;
 
 #[cfg(feature = "newlib")]
 const LWIP_FD_BIT: i32 = 1 << 30;
