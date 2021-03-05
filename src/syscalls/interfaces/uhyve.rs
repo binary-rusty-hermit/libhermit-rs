@@ -191,13 +191,13 @@ impl SysLseek {
 #[repr(C, packed)]
 struct SysReadlink {
         pathname: PhysAddr,
-        buf: *const u8,
+        buf: *mut u8,
         len: usize,
         ret: isize,
 }
 
 impl SysReadlink {
-        fn new(pathname: VirtAddr, buf: *const u8, len: usize) -> SysReadlink {
+        fn new(pathname: VirtAddr, buf: *mut u8, len: usize) -> SysReadlink {
                 SysReadlink {
                         pathname: paging::virtual_to_physical(pathname),
                         buf,
