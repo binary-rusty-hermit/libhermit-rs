@@ -9,6 +9,9 @@ const SYS_STAT: usize = 4;
 const SYS_FSTAT: usize = 5;
 const SYS_LSEEK: usize = 8;
 
+#[cfg(feature = "newlib")]
+const SYS_BRK: usize = 12;
+
 const SYS_EXIT: usize = 60;
 const SYS_UNAME: usize = 63;
 const SYS_READLINK: usize = 89;
@@ -46,9 +49,18 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
                         state.rax = sys_lseek(state.rdi as i32, state.rsi as isize, state.rdx as i32) as usize;
                         },
 
+		#[cfg(feature = "newlib")]
+                SYS_BRK => {
+                        state.rax = tasks::sys_brk(state.rdi);
+                        },
+
 		SYS_EXIT => {
                         state.rax = sys_exit(state.rdi as i32);
                         },
+
+		SYS_UNAME => {
+                        state.rax = sys_uname(state.rdi as *mut Utsname) as usize;
+                },
 
 		SYS_READLINK => {
                         state.rax = sys_readlink(state.rdi as *const u8, state.rsi as *mut u8, state.rdx) as usize;

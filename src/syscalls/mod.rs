@@ -41,6 +41,7 @@ mod spinlock;
 mod system;
 pub mod tasks;
 pub mod timer;
+pub mod uname;
 
 #[cfg(feature = "newlib")]
 const LWIP_FD_BIT: i32 = 1 << 30;
