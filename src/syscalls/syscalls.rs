@@ -18,6 +18,7 @@ const SYS_UNAME: usize = 63;
 const SYS_READLINK: usize = 89;
 const SYS_GETTIMEOFDAY: usize = 96;
 const SYS_ARCH_PRCTL: usize = 158;
+const SYS_OPENAT: usize = 257;
 
 #[no_mangle]
 pub unsafe extern "C" fn syscall_handler(state: &mut State) {
@@ -73,6 +74,10 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
 
 		SYS_ARCH_PRCTL => {
                         state.rax = sys_arch_prctl(state.rdi, state.rsi as *mut usize);
+                }
+
+		SYS_OPENAT => {
+                        state.rax = sys_openat(state.rdi as i32, state.rsi as *const u8, state.rdx as i32) as usize;
                 }
 
 		 _ => panic!("Rax was: {}, Not implemented", state.rax),

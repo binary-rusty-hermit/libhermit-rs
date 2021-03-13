@@ -252,3 +252,12 @@ fn __sys_fstat(fd: i32, st: usize) -> isize {
 pub extern "C" fn sys_fstat(fd: i32, st: usize) -> isize {
         kernel_function!(__sys_fstat(fd, st))
 }
+
+fn __sys_openat(dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+        unsafe { SYS.openat(dirfd, pathname, flags) }
+}
+#[no_mangle]
+pub extern "C" fn sys_openat(dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+        kernel_function!(__sys_openat(dirfd, pathname, flags))
+}
+

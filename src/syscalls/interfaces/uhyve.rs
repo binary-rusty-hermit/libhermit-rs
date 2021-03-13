@@ -31,6 +31,7 @@ const UHYVE_PORT_UNLINK: u16 = 0x840;
 const UHYVE_PORT_READLINK: u16 = 0x880;
 const UHYVE_PORT_FSTAT: u16 = 0x900;
 const UHYVE_PORT_STAT: u16 = 0x940;
+const UHYVE_PORT_OPENAT: u16 = 0x980;
 
 #[cfg(feature = "newlib")]
 extern "C" {
@@ -265,6 +266,25 @@ impl SysStat {
         }
 }
 
+#[repr(C, packed)]
+struct SysOpenat {
+        dirfd: i32,
+        pathname: PhysAddr,
+	flags: i32,
+        ret: i32,
+}
+
+impl SysOpenat {
+	fn new(dirfd: i32, pathname: VirtAddr, flags: i32) -> SysOpenat {
+                SysOpenat {
+			dirfd,
+                        pathname: paging::virtual_to_physical(pathname),
+                        flags,
+                        ret: -1,
+                }
+        }
+}
+
 pub struct Uhyve;
 
 impl SyscallInterface for Uhyve {
@@ -461,5 +481,12 @@ impl SyscallInterface for Uhyve {
                 sysstat.ret as isize
 
         }
+
+	fn openat(&self, dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+		let mut sysopenat = SysOpenat::new(dirfd, VirtAddr(pathname as u64), flags);
+		uhyve_send(UHYVE_PORT_OPENAT, &mut sysopenat);
+
+		sysopenat.ret as isize
+	}
 
 }

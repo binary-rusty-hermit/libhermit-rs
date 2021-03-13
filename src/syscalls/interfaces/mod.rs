@@ -299,4 +299,9 @@ pub trait SyscallInterface: Send + Sync {
                 info!("fstat is unimplemented");
                 -ENOSYS as isize
         }
+
+	fn openat(&self, _dirfd: i32, _pathname: *const u8, _flags: i32) -> isize {
+                info!("openat is unimplemented");
+                -ENOSYS as isize
+        }
 }
