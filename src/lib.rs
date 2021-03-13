@@ -39,6 +39,8 @@
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(core_intrinsics)]
 #![feature(alloc_error_handler)]
+#![feature(vec_into_raw_parts)]
+#![feature(drain_filter)]
 #![allow(unused_macros)]
 #![no_std]
 #![cfg_attr(target_os = "hermit", feature(custom_test_frameworks))]
@@ -54,6 +56,7 @@
 extern crate alloc;
 #[macro_use]
 extern crate bitflags;
+extern crate crossbeam_utils;
 #[macro_use]
 extern crate log;
 #[cfg(target_arch = "x86_64")]
@@ -71,7 +74,10 @@ extern crate x86;
 
 use alloc::alloc::Layout;
 use core::alloc::GlobalAlloc;
-use core::sync::atomic::{spin_loop_hint, AtomicU32, Ordering};
+#[cfg(feature = "smp")]
+use core::hint::spin_loop;
+#[cfg(feature = "smp")]
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use arch::percore::*;
 use mm::allocator::LockedHeap;
@@ -285,7 +291,7 @@ extern "C" fn initd(_arg: usize) {
 	}
 
 	// Initialize PCI Drivers if on x86_64
-	#[cfg(target_arch = "x86_64")]
+	#[cfg(all(target_arch = "x86_64", feature = "pci"))]
 	x86_64::kernel::pci::init_drivers();
 
 	syscalls::init();
@@ -293,6 +299,8 @@ extern "C" fn initd(_arg: usize) {
 	// Get the application arguments and environment variables.
 	#[cfg(not(test))]
 	let (argc, argv, environ) = syscalls::get_application_parameters();
+
+	config::sanity_check();
 
 	// give the IP thread time to initialize the network interface
 	core_scheduler().reschedule();
@@ -306,13 +314,14 @@ extern "C" fn initd(_arg: usize) {
 	test_main();
 }
 
+#[cfg(feature = "smp")]
 fn synch_all_cores() {
 	static CORE_COUNTER: AtomicU32 = AtomicU32::new(0);
 
 	CORE_COUNTER.fetch_add(1, Ordering::SeqCst);
 
 	while CORE_COUNTER.load(Ordering::SeqCst) != get_processor_count() {
-		spin_loop_hint();
+		spin_loop();
 	}
 }
 
@@ -341,20 +350,28 @@ fn boot_processor_main() -> ! {
 		arch::boot_application_processors();
 	}
 
+	#[cfg(feature = "smp")]
 	synch_all_cores();
+
+	#[cfg(feature = "pci")]
+	info!("Compiled with PCI support");
+	#[cfg(feature = "acpi")]
+	info!("Compiled with ACPI support");
+	#[cfg(feature = "fsgsbase")]
+	info!("Compiled with FSGSBASE support");
+	#[cfg(feature = "smp")]
+	info!("Compiled with SMP support");
 
 	// Start the initd task.
 	scheduler::PerCoreScheduler::spawn(initd, 0, scheduler::task::NORMAL_PRIO, 0, USER_STACK_SIZE);
 
 	let core_scheduler = core_scheduler();
 	// Run the scheduler loop.
-	loop {
-		core_scheduler.reschedule_and_wait();
-	}
+	core_scheduler.run();
 }
 
 /// Entry Point of HermitCore for an Application Processor
-#[cfg(target_os = "hermit")]
+#[cfg(all(target_os = "hermit", feature = "smp"))]
 fn application_processor_main() -> ! {
 	arch::application_processor_init();
 	scheduler::add_current_core();
@@ -365,7 +382,5 @@ fn application_processor_main() -> ! {
 
 	let core_scheduler = core_scheduler();
 	// Run the scheduler loop.
-	loop {
-		core_scheduler.reschedule_and_wait();
-	}
+	core_scheduler.run();
 }

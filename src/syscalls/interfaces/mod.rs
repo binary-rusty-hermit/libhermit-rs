@@ -6,6 +6,7 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
+#![allow(unused)]
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
@@ -116,55 +117,76 @@ pub trait SyscallInterface: Send + Sync {
 	}
 
 	fn get_mac_address(&self) -> Result<[u8; 6], ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => Ok(driver.lock().get_mac_address()),
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
 	fn get_mtu(&self) -> Result<u16, ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => Ok(driver.lock().get_mtu()),
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
 	fn has_packet(&self) -> bool {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => driver.lock().has_packet(),
 			_ => false,
 		}
+		#[cfg(not(feature = "pci"))]
+		false
 	}
 
 	fn get_tx_buffer(&self, len: usize) -> Result<(*mut u8, usize), ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => driver.lock().get_tx_buffer(len),
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
 	fn send_tx_buffer(&self, handle: usize, len: usize) -> Result<(), ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => driver.lock().send_tx_buffer(handle, len),
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
-	fn receive_rx_buffer(&self) -> Result<&'static [u8], ()> {
+	fn receive_rx_buffer(&self) -> Result<(&'static [u8], usize), ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => driver.lock().receive_rx_buffer(),
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
-	fn rx_buffer_consumed(&self) -> Result<(), ()> {
+	fn rx_buffer_consumed(&self, handle: usize) -> Result<(), ()> {
+		#[cfg(feature = "pci")]
 		match arch::kernel::pci::get_network_driver() {
 			Some(driver) => {
-				driver.lock().rx_buffer_consumed();
+				driver.lock().rx_buffer_consumed(handle);
 				Ok(())
 			}
 			_ => Err(()),
 		}
+		#[cfg(not(feature = "pci"))]
+		Err(())
 	}
 
 	#[cfg(not(target_arch = "x86_64"))]
