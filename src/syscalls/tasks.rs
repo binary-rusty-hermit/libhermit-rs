@@ -118,16 +118,17 @@ pub extern "C" fn sys_sbrk(incr: isize) -> usize {
 fn __sys_brk(addr: usize) -> usize {
         let task_heap_start = task_heap_start();
         let task_heap_end = task_heap_end();
-        let old_end;
 
         if addr == 0 {
-                return task_heap_end.as_usize();
+                return SBRK_COUNTER.load(Ordering::SeqCst);
         }
 
-        old_end = SBRK_COUNTER.swap(addr, Ordering::SeqCst);
-        assert!(task_heap_end.as_usize() >= task_heap_start.as_usize());
+	assert!(addr > task_heap_start.as_usize());
+	assert!(addr <= task_heap_end.as_usize());
 
-        old_end
+	SBRK_COUNTER.store(addr, Ordering::SeqCst);	
+	
+	return addr        
 }
 
 #[cfg(feature = "newlib")]
