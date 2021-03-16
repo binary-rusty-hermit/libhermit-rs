@@ -1,10 +1,9 @@
 status = [
-  "Tests",
   "Tests (macOS-latest, nightly)",
   "Tests (windows-latest, nightly)",
   "Tests (ubuntu-latest, nightly)",
   "Format check (ubuntu-latest, nightly)",
-  "continuous-integration/travis-ci/push"
+  "ci/gitlab/git.rwth-aachen.de",
 ]
 delete_merged_branches = true
 timeout_sec = 7200

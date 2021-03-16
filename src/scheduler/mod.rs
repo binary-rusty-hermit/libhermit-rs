@@ -9,8 +9,13 @@
 use alloc::boxed::Box;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::rc::Rc;
+use alloc::vec::Vec;
 use core::cell::RefCell;
+#[cfg(feature = "smp")]
+use core::convert::TryFrom;
+use core::convert::TryInto;
 use core::sync::atomic::{AtomicU32, Ordering};
+use crossbeam_utils::Backoff;
 
 use crate::arch;
 use crate::arch::irq;
@@ -26,7 +31,7 @@ pub mod task;
 
 static NO_TASKS: AtomicU32 = AtomicU32::new(0);
 /// Map between Core ID and per-core scheduler
-static mut SCHEDULERS: BTreeMap<CoreId, &PerCoreScheduler> = BTreeMap::new();
+static mut SCHEDULERS: Vec<&PerCoreScheduler> = Vec::new();
 /// Map between Task ID and Task Control Block
 static TASKS: SpinlockIrqSave<BTreeMap<TaskId, VecDeque<TaskHandle>>> =
 	SpinlockIrqSave::new(BTreeMap::new());
@@ -34,6 +39,7 @@ static TASKS: SpinlockIrqSave<BTreeMap<TaskId, VecDeque<TaskHandle>>> =
 /// Unique identifier for a core.
 pub type CoreId = u32;
 
+#[cfg(feature = "smp")]
 struct SchedulerInput {
 	/// Queue of new tasks
 	new_tasks: VecDeque<Rc<RefCell<Task>>>,
@@ -41,6 +47,7 @@ struct SchedulerInput {
 	wakeup_tasks: VecDeque<TaskHandle>,
 }
 
+#[cfg(feature = "smp")]
 impl SchedulerInput {
 	pub fn new() -> Self {
 		Self {
@@ -49,8 +56,15 @@ impl SchedulerInput {
 		}
 	}
 }
+
+#[cfg_attr(any(target_arch = "x86_64", target_arch = "aarch64"), repr(align(128)))]
+#[cfg_attr(
+	not(any(target_arch = "x86_64", target_arch = "aarch64")),
+	repr(align(64))
+)]
 pub struct PerCoreScheduler {
 	/// Core ID of this per-core scheduler
+	#[cfg(feature = "smp")]
 	core_id: CoreId,
 	/// Task which is currently running
 	current_task: Rc<RefCell<Task>>,
@@ -65,6 +79,7 @@ pub struct PerCoreScheduler {
 	/// Queue of blocked tasks, sorted by wakeup time.
 	blocked_tasks: BlockedTaskQueue,
 	/// Queues to handle incoming requests from the other cores
+	#[cfg(feature = "smp")]
 	input: SpinlockIrqSave<SchedulerInput>,
 }
 
@@ -90,16 +105,25 @@ impl PerCoreScheduler {
 
 		// Add it to the task lists.
 		let wakeup = {
+			#[cfg(feature = "smp")]
 			let mut input_locked = get_scheduler(core_id).input.lock();
 			TASKS.lock().insert(tid, VecDeque::with_capacity(1));
 			NO_TASKS.fetch_add(1, Ordering::SeqCst);
 
+			#[cfg(feature = "smp")]
 			if core_id != core_scheduler().core_id {
 				input_locked.new_tasks.push_back(task);
 				true
 			} else {
 				core_scheduler().ready_queue.push(task);
 				false
+			}
+			#[cfg(not(feature = "smp"))]
+			if core_id == 0 {
+				core_scheduler().ready_queue.push(task);
+				false
+			} else {
+				panic!("Invalid  core_id {}!", core_id)
 			}
 		};
 
@@ -174,15 +198,24 @@ impl PerCoreScheduler {
 
 		// Add it to the task lists.
 		let wakeup = {
+			#[cfg(feature = "smp")]
 			let mut input_locked = get_scheduler(core_id).input.lock();
 			TASKS.lock().insert(tid, VecDeque::with_capacity(1));
 			NO_TASKS.fetch_add(1, Ordering::SeqCst);
+			#[cfg(feature = "smp")]
 			if core_id != core_scheduler().core_id {
 				input_locked.new_tasks.push_back(clone_task);
 				true
 			} else {
 				core_scheduler().ready_queue.push(clone_task);
 				false
+			}
+			#[cfg(not(feature = "smp"))]
+			if core_id == 0 {
+				core_scheduler().ready_queue.push(clone_task);
+				false
+			} else {
+				panic!("Invalid core_id {}!", core_id);
 			}
 		};
 
@@ -214,6 +247,12 @@ impl PerCoreScheduler {
 		irqsave(|| self.blocked_tasks.handle_waiting_tasks());
 	}
 
+	#[cfg(not(feature = "smp"))]
+	pub fn custom_wakeup(&mut self, task: TaskHandle) {
+		irqsave(|| self.blocked_tasks.custom_wakeup(task));
+	}
+
+	#[cfg(feature = "smp")]
 	pub fn custom_wakeup(&mut self, task: TaskHandle) {
 		if task.get_core_id() == self.core_id {
 			irqsave(|| self.blocked_tasks.custom_wakeup(task));
@@ -354,6 +393,7 @@ impl PerCoreScheduler {
 		result
 	}
 
+	#[cfg(feature = "smp")]
 	pub fn check_input(&mut self) {
 		let mut input_locked = self.input.lock();
 
@@ -372,28 +412,41 @@ impl PerCoreScheduler {
 		irqsave(|| self.scheduler());
 	}
 
-	/// Only the idle task should call this function to
-	/// reschedule the system. Set the idle task in halt
-	/// state by leaving this function.
-	pub fn reschedule_and_wait(&mut self) {
-		irq::disable();
-		self.scheduler();
+	/// Only the idle task should call this function.
+	/// Set the idle task to halt state if not another
+	/// available.
+	pub fn run(&mut self) -> ! {
+		let backoff = Backoff::new();
 
-		// do housekeeping
-		let wakeup_tasks = self.cleanup_tasks();
+		loop {
+			irq::disable();
+			if !self.scheduler() {
+				backoff.reset()
+			}
 
-		// Reenable interrupts and simultaneously set the CPU into the HALT state to only wake up at the next interrupt.
-		// This atomic operation guarantees that we cannot miss a wakeup interrupt in between.
-		if !wakeup_tasks {
-			irq::enable_and_wait();
-		} else {
-			irq::enable();
+			// do housekeeping
+			let wakeup_tasks = self.cleanup_tasks();
+
+			// Reenable interrupts and simultaneously set the CPU into the HALT state to only wake up at the next interrupt.
+			// This atomic operation guarantees that we cannot miss a wakeup interrupt in between.
+			if !wakeup_tasks {
+				if backoff.is_completed() {
+					irq::enable_and_wait();
+				} else {
+					irq::enable();
+					backoff.snooze();
+				}
+			} else {
+				irq::enable();
+			}
 		}
 	}
 
 	/// Triggers the scheduler to reschedule the tasks.
 	/// Interrupt flag must be cleared before calling this function.
-	pub fn scheduler(&mut self) {
+	/// Returns `true` if the new and the old task is the idle task,
+	/// otherwise the function returns `false`.
+	pub fn scheduler(&mut self) -> bool {
 		// Someone wants to give up the CPU
 		// => we have time to cleanup the system
 		let _ = self.cleanup_tasks();
@@ -484,6 +537,10 @@ impl PerCoreScheduler {
 					}
 				}
 			}
+
+			false
+		} else {
+			status == TaskStatus::TaskIdle
 		}
 	}
 }
@@ -520,6 +577,7 @@ pub fn add_current_core() {
 		core_id, tid
 	);
 	let boxed_scheduler = Box::new(PerCoreScheduler {
+		#[cfg(feature = "smp")]
 		core_id,
 		current_task: idle_task.clone(),
 		idle_task: idle_task.clone(),
@@ -527,20 +585,22 @@ pub fn add_current_core() {
 		ready_queue: PriorityTaskQueue::new(),
 		finished_tasks: VecDeque::new(),
 		blocked_tasks: BlockedTaskQueue::new(),
+		#[cfg(feature = "smp")]
 		input: SpinlockIrqSave::new(SchedulerInput::new()),
 	});
 
 	let scheduler = Box::into_raw(boxed_scheduler);
 	set_core_scheduler(scheduler);
 	unsafe {
-		SCHEDULERS.insert(core_id, &(*scheduler));
+		SCHEDULERS.insert(core_id.try_into().unwrap(), scheduler.as_ref().unwrap());
 	}
 }
 
 #[inline]
+#[cfg(feature = "smp")]
 fn get_scheduler(core_id: CoreId) -> &'static PerCoreScheduler {
 	// Get the scheduler for the desired core.
-	if let Some(result) = unsafe { SCHEDULERS.get(&core_id) } {
+	if let Some(result) = unsafe { SCHEDULERS.get(usize::try_from(core_id).unwrap()) } {
 		result
 	} else {
 		panic!(
