@@ -90,6 +90,9 @@ pub struct BootInfo {
         app_size: u64,
         app_start: usize,
         app_entry_point: u64,
+        app_ehdr_phoff: u64,
+        app_ehdr_phnum: u16,
+        app_ehdr_phentsize: u16,
 }
 
 /// Kernel header to announce machine features
@@ -192,6 +195,18 @@ pub fn get_app_start() -> usize {
 
 pub fn get_app_entry_point() -> usize {
 	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_entry_point) as usize }
+}
+
+pub fn get_app_ehdr_phoff() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_ehdr_phoff) as usize }
+}
+
+pub fn get_app_ehdr_phnum() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_ehdr_phnum) as usize }
+}
+
+pub fn get_app_ehdr_phentsize() -> usize {
+	unsafe { core::ptr::read_volatile(&(*BOOT_INFO).app_ehdr_phentsize) as usize }
 }
 // End of functions for application
 
