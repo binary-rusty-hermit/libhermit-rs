@@ -1,5 +1,6 @@
 .global isyscall
 isyscall:
+		cli
                 sub $0x100, %rsp        // Create some room to use, to  not mess up stack
                 push %r15
                 push %r14
@@ -17,7 +18,13 @@ isyscall:
                 push %rcx               // Return address
                 push %rax               // First variable to struct
                 mov %rsp, %rdi          // Address of struct on stack
+
+		sti
+
                 call syscall_handler
+
+		cli
+
                 pop %rax
                 pop %rcx                // Address in application code
                 pop %rdx
@@ -36,7 +43,12 @@ isyscall:
                 push %r11
                 popfq                   // Restore rflags
                 add $0x100, %rsp        // Discard used space on stack
+
+		sti
+
                 jmp *%rcx               // Jump back to application code
+
+
 
 
 
