@@ -92,6 +92,7 @@ pub fn sbrk_init() {
 
 #[cfg(feature = "newlib")]
 fn __sys_sbrk(incr: isize) -> usize {
+	println!("SBRK!");
 	// Get the boundaries of the task heap and verify that they are suitable for sbrk.
 	let task_heap_start = task_heap_start();
 	let task_heap_end = task_heap_end();
@@ -118,17 +119,17 @@ pub extern "C" fn sys_sbrk(incr: isize) -> usize {
 fn __sys_brk(addr: usize) -> usize {
         let task_heap_start = task_heap_start();
         let task_heap_end = task_heap_end();
-
+	
         if addr == 0 {
-                return SBRK_COUNTER.load(Ordering::SeqCst);
+		return SBRK_COUNTER.load(Ordering::SeqCst);
         }
 
-	assert!(addr > task_heap_start.as_usize());
-	assert!(addr <= task_heap_end.as_usize());
-
-	SBRK_COUNTER.store(addr, Ordering::SeqCst);	
-	
-	return addr        
+	if(addr > task_heap_start.as_usize() && addr <= task_heap_end.as_usize()) {
+		let old_end = SBRK_COUNTER.swap(addr, Ordering::SeqCst);	
+		return old_end;
+	} else {
+		return -ENOMEM as usize; 
+	}
 }
 
 #[cfg(feature = "newlib")]
