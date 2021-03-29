@@ -92,7 +92,6 @@ pub fn sbrk_init() {
 
 #[cfg(feature = "newlib")]
 fn __sys_sbrk(incr: isize) -> usize {
-	println!("SBRK!");
 	// Get the boundaries of the task heap and verify that they are suitable for sbrk.
 	let task_heap_start = task_heap_start();
 	let task_heap_end = task_heap_end();

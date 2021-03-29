@@ -42,6 +42,9 @@ mod system;
 pub mod tasks;
 pub mod timer;
 pub mod uname;
+pub mod mmap;
+pub mod mprotect;
+pub mod munmap;
 
 #[cfg(feature = "newlib")]
 const LWIP_FD_BIT: i32 = 1 << 30;

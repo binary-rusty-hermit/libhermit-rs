@@ -1,5 +1,5 @@
 const SYSNAME: &str = "Hemitux\0";
-const NODENAME: &str = "\0"; //TODO
+const NODENAME: &str = "hermitux\0";
 const RELEASE: &str = "4.9.0-4-amd64\0";
 const VERSION: &str = "0.1-may-2018\0";
 const MACHINE: &str = "x86_64\0";

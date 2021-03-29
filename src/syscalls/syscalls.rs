@@ -1,6 +1,10 @@
 use super::*;
 use crate::arch_prctl::sys_arch_prctl;
 use crate::uname::*;
+use crate::mmap::*;
+use crate::mprotect::*;
+use crate::munmap::*;
+
 
 const SYS_READ: usize = 0;
 const SYS_WRITE: usize = 1;
@@ -9,6 +13,9 @@ const SYS_CLOSE: usize = 3;
 const SYS_STAT: usize = 4;
 const SYS_FSTAT: usize = 5;
 const SYS_LSEEK: usize = 8;
+const SYS_MMAP: usize = 9;
+const SYS_MPROTECT: usize = 10;
+const SYS_MUNMAP: usize = 11;
 
 #[cfg(feature = "newlib")]
 const SYS_BRK: usize = 12;
@@ -49,6 +56,18 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
 
 		SYS_LSEEK => {
                         state.rax = sys_lseek(state.rdi as i32, state.rsi as isize, state.rdx as i32) as usize;
+                        },
+
+		SYS_MMAP => {
+                        state.rax = sys_mmap(state.rdi as *const usize, state.rsi, state.rdx as i32, state.r10 as i32, state.r8 as i32, state.r9 as i64);
+                        },
+
+		SYS_MPROTECT => {
+                        state.rax = sys_mprotect(state.rdi as *const usize, state.rsi, state.rdx as i32) as usize;
+                        },
+
+		SYS_MUNMAP => {
+                        state.rax = sys_munmap(state.rdi as *const usize, state.rsi) as usize;
                         },
 
 		#[cfg(feature = "newlib")]
