@@ -15,11 +15,16 @@ use crate::environment;
 use crate::x86::controlregs::*;
 use crate::x86::cpuid::*;
 use crate::x86::msr::*;
-use core::arch::x86_64::__rdtscp as rdtscp;
-use core::arch::x86_64::_rdtsc as rdtsc;
+use core::arch::x86_64::{__rdtscp as rdtscp, _rdrand32_step, _rdrand64_step, _rdtsc as rdtsc};
 use core::convert::TryInto;
-use core::sync::atomic::spin_loop_hint;
+use core::hint::spin_loop;
 use core::{fmt, u32};
+
+global_asm!(include_str!("isyscall.s"));
+
+extern "C" {
+        fn isyscall();
+}
 
 const IA32_MISC_ENABLE_ENHANCED_SPEEDSTEP: u64 = 1 << 16;
 const IA32_MISC_ENABLE_SPEEDSTEP_LOCK: u64 = 1 << 20;
@@ -34,6 +39,22 @@ const EFER_SVME: u64 = 1 << 12;
 const EFER_LMSLE: u64 = 1 << 13;
 const EFER_FFXSR: u64 = 1 << 14;
 const EFER_TCE: u64 = 1 << 15;
+
+
+// MSR registers
+const MSR_STAR: u32 = 0xc0000081;
+const MSR_LSTAR: u32 = 0xc0000082;
+const MSR_SYSCALL_MASK: u32 = 0xc0000084;
+
+// EFLAG bits
+const EFLAGS_TF: u64 = 1 <<  8; /* Trap Flag */
+const EFLAGS_IF: u64 = 1 << 9; /* Interrupt Flag */
+const EFLAGS_DF: u64 = 1 << 10; /* Direction Flag */
+const EFLAGS_NT: u64 = 1 << 14; /* Nested Task */
+const EFLAGS_AC: u64 = 1 << 18; /* Alignment Check/Access Control */
+
+// See Intel SDM - Volume 1 - Section 7.3.17.1
+const RDRAND_RETRY_LIMIT: usize = 10;
 
 static mut CPU_FREQUENCY: CpuFrequency = CpuFrequency::new();
 static mut CPU_SPEEDSTEP: CpuSpeedStep = CpuSpeedStep::new();
@@ -389,7 +410,7 @@ impl CpuFrequency {
 				break tick;
 			}
 
-			spin_loop_hint();
+			spin_loop();
 		};
 
 		// Count the number of CPU cycles during 3 timer ticks.
@@ -401,7 +422,7 @@ impl CpuFrequency {
 				break;
 			}
 
-			spin_loop_hint();
+			spin_loop();
 		}
 
 		let end = get_timestamp();
@@ -747,9 +768,19 @@ pub fn detect_features() {
 
 pub fn configure() {
 	// setup MSR EFER
-	unsafe {
-		wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LMA | EFER_SCE | EFER_NXE);
-	}
+        unsafe {
+                wrmsr(IA32_EFER, rdmsr(IA32_EFER) | EFER_LMA | EFER_SCE | EFER_NXE);
+                wrmsr(MSR_STAR, (0x0b << 48) | (0x08 << 32));
+
+                //let x : u64 = rdmsr(IA32_EFER);
+                //info!("IA32_EFER = {}", x);
+
+                let pointer : u64;
+                pointer = isyscall as u64;
+
+                wrmsr(MSR_LSTAR, pointer);
+                wrmsr(MSR_SYSCALL_MASK, EFLAGS_TF|EFLAGS_DF|EFLAGS_IF|EFLAGS_AC|EFLAGS_NT);
+	}	
 
 	//
 	// CR0 CONFIGURATION
@@ -760,7 +791,7 @@ pub fn configure() {
 	cr0.insert(Cr0::CR0_MONITOR_COPROCESSOR | Cr0::CR0_NUMERIC_ERROR);
 	cr0.remove(Cr0::CR0_EMULATE_COPROCESSOR);
 
-	// Call the IRQ7 handler on the first FPU access.
+	// if set, the first FPU access will trigger interupt 7.
 	cr0.insert(Cr0::CR0_TASK_SWITCHED);
 
 	// Prevent writes to read-only pages in Ring 0.
@@ -789,10 +820,21 @@ pub fn configure() {
 		cr4.insert(Cr4::CR4_ENABLE_OS_XSAVE);
 	}
 
+	// Disable Performance-Monitoring Counters
+	cr4.remove(Cr4::CR4_ENABLE_PPMC);
+	// clear TSD => every privilege level is able
+	// to use rdtsc
+	cr4.remove(Cr4::CR4_TIME_STAMP_DISABLE);
+
 	if supports_fsgs() {
 		cr4.insert(Cr4::CR4_ENABLE_FSGSBASE);
-	} else {
-		panic!("libhermit-rs requires the CPU feature FSGSBASE");
+		#[cfg(feature = "fsgsbase")]
+		info!("Enable FSGSBASE support");
+	}
+	#[cfg(feature = "fsgsbase")]
+	if !supports_fsgs() {
+		error!("FSGSBASE support is enabled, but the processor doesn't support it!");
+		crate::__sys_shutdown(1);
 	}
 
 	debug!("Set CR4 to 0x{:x}", cr4);
@@ -813,6 +855,7 @@ pub fn configure() {
 			xcr0.insert(Xcr0::XCR0_AVX_STATE);
 		}
 
+		debug!("Set XCR0 to 0x{:x}", xcr0);
 		unsafe {
 			xcr0_write(xcr0);
 		}
@@ -821,10 +864,10 @@ pub fn configure() {
 	// Initialize the FS register, which is later used for Thread-Local Storage.
 	writefs(0);
 
-	//
-	// ENHANCED INTEL SPEEDSTEP CONFIGURATION
-	//
 	unsafe {
+		//
+		// ENHANCED INTEL SPEEDSTEP CONFIGURATION
+		//
 		CPU_SPEEDSTEP.configure();
 	}
 }
@@ -882,14 +925,13 @@ pub fn generate_random_number32() -> Option<u32> {
 		if SUPPORTS_RDRAND {
 			let mut value: u32 = 0;
 
-			while core::arch::x86_64::_rdrand32_step(&mut value) == 1 {
-				spin_loop_hint();
+			for _ in 0..RDRAND_RETRY_LIMIT {
+				if _rdrand32_step(&mut value) == 1 {
+					return Some(value);
+				}
 			}
-
-			Some(value)
-		} else {
-			None
 		}
+		None
 	}
 }
 
@@ -898,14 +940,13 @@ pub fn generate_random_number64() -> Option<u64> {
 		if SUPPORTS_RDRAND {
 			let mut value: u64 = 0;
 
-			while core::arch::x86_64::_rdrand64_step(&mut value) == 1 {
-				spin_loop_hint();
+			for _ in 0..RDRAND_RETRY_LIMIT {
+				if _rdrand64_step(&mut value) == 1 {
+					return Some(value);
+				}
 			}
-
-			Some(value)
-		} else {
-			None
 		}
+		None
 	}
 }
 
@@ -992,34 +1033,90 @@ pub fn get_frequency() -> u16 {
 }
 
 #[inline]
+#[cfg(feature = "fsgsbase")]
 pub fn readfs() -> usize {
 	let val: u64;
+
 	unsafe {
 		llvm_asm!("rdfsbase $0" : "=r"(val) ::: "volatile");
 	}
+
 	val as usize
 }
 
 #[inline]
+#[cfg(not(feature = "fsgsbase"))]
+pub fn readfs() -> usize {
+	let rdx: u64;
+	let rax: u64;
+
+	unsafe {
+		llvm_asm!("rdmsr" : "=%rdx"(rdx), "=%rax"(rax) : "%rcx"(0xc0000100u64) :: "volatile");
+	}
+
+	((rdx << 32) | rax) as usize
+}
+
+#[inline]
+#[cfg(feature = "fsgsbase")]
 pub fn readgs() -> usize {
 	let val: u64;
+
 	unsafe {
 		llvm_asm!("rdgsbase $0" : "=r"(val) ::: "volatile");
 	}
+
 	val as usize
 }
 
 #[inline]
+#[cfg(not(feature = "fsgsbase"))]
+pub fn readgs() -> usize {
+	let rdx: u64;
+	let rax: u64;
+
+	unsafe {
+		llvm_asm!("rdmsr" : "=%rdx"(rdx), "=%rax"(rax) : "%rcx"(0xc0000101u64) :: "volatile");
+	}
+
+	((rdx << 32) | rax) as usize
+}
+
+#[inline]
+#[cfg(feature = "fsgsbase")]
 pub fn writefs(fs: usize) {
 	unsafe {
-		llvm_asm!("wrfsbase $0" :: "r"(fs as u64) :: "volatile");
+		llvm_asm!("wrfsbase $0" :: "r"(fs) :: "volatile");
 	}
 }
 
 #[inline]
+#[cfg(not(feature = "fsgsbase"))]
+pub fn writefs(fs: usize) {
+	let rdx = fs >> 32;
+	let rax = fs & (u32::MAX - 1) as usize;
+
+	unsafe {
+		llvm_asm!("wrmsr" :: "%rcx"(0xc0000100u64), "%rdx"(rdx), "%rax"(rax) :: "volatile");
+	}
+}
+
+#[inline]
+#[cfg(feature = "fsgsbase")]
 pub fn writegs(gs: usize) {
 	unsafe {
-		llvm_asm!("wrgsbase $0" :: "r"(gs as u64) :: "volatile");
+		llvm_asm!("wrgsbase $0" :: "r"(gs) :: "volatile");
+	}
+}
+
+#[inline]
+#[cfg(not(feature = "fsgsbase"))]
+pub fn writegs(gs: usize) {
+	let rdx = gs >> 32;
+	let rax = gs & (u32::MAX - 1) as usize;
+
+	unsafe {
+		llvm_asm!("wrmsr" :: "%rcx"(0xc0000101u64), "%rdx"(rdx), "%rax"(rax) :: "volatile");
 	}
 }
 
@@ -1047,6 +1144,6 @@ unsafe fn get_timestamp_rdtscp() -> u64 {
 pub fn udelay(usecs: u64) {
 	let end = get_timestamp() + u64::from(get_frequency()) * usecs;
 	while get_timestamp() < end {
-		spin_loop_hint();
+		spin_loop();
 	}
 }

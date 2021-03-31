@@ -114,6 +114,30 @@ pub extern "C" fn sys_sbrk(incr: isize) -> usize {
 	kernel_function!(__sys_sbrk(incr))
 }
 
+#[cfg(feature = "newlib")]
+fn __sys_brk(addr: usize) -> usize {
+        let task_heap_start = task_heap_start();
+        let task_heap_end = task_heap_end();
+	
+        if addr == 0 {
+		return SBRK_COUNTER.load(Ordering::SeqCst);
+        }
+
+	if(addr > task_heap_start.as_usize() && addr <= task_heap_end.as_usize()) {
+		let old_end = SBRK_COUNTER.swap(addr, Ordering::SeqCst);	
+		return old_end;
+	} else {
+		return -ENOMEM as usize; 
+	}
+}
+
+#[cfg(feature = "newlib")]
+#[no_mangle]
+pub extern "C" fn sys_brk(addr: usize) -> usize {
+        kernel_function!(__sys_brk(addr))
+}
+
+
 pub fn __sys_usleep(usecs: u64) {
 	if usecs >= 10_000 {
 		// Enough time to set a wakeup timer and block the current task.

@@ -25,6 +25,9 @@ pub use self::system::*;
 pub use self::tasks::*;
 pub use self::timer::*;
 
+pub mod syscalls;
+pub mod arch_prctl; 
+
 mod condvar;
 pub mod fs;
 mod interfaces;
@@ -36,8 +39,12 @@ mod recmutex;
 mod semaphore;
 mod spinlock;
 mod system;
-mod tasks;
-mod timer;
+pub mod tasks;
+pub mod timer;
+pub mod uname;
+pub mod mmap;
+pub mod mprotect;
+pub mod munmap;
 
 #[cfg(feature = "newlib")]
 const LWIP_FD_BIT: i32 = 1 << 30;
@@ -124,22 +131,22 @@ pub fn sys_send_tx_buffer(handle: usize, len: usize) -> Result<(), ()> {
 	kernel_function!(__sys_send_tx_buffer(handle, len))
 }
 
-fn __sys_receive_rx_buffer() -> Result<&'static [u8], ()> {
+fn __sys_receive_rx_buffer() -> Result<(&'static [u8], usize), ()> {
 	unsafe { SYS.receive_rx_buffer() }
 }
 
 #[no_mangle]
-pub fn sys_receive_rx_buffer() -> Result<&'static [u8], ()> {
+pub fn sys_receive_rx_buffer() -> Result<(&'static [u8], usize), ()> {
 	kernel_function!(__sys_receive_rx_buffer())
 }
 
-fn __sys_rx_buffer_consumed() -> Result<(), ()> {
-	unsafe { SYS.rx_buffer_consumed() }
+fn __sys_rx_buffer_consumed(handle: usize) -> Result<(), ()> {
+	unsafe { SYS.rx_buffer_consumed(handle) }
 }
 
 #[no_mangle]
-pub fn sys_rx_buffer_consumed() -> Result<(), ()> {
-	kernel_function!(__sys_rx_buffer_consumed())
+pub fn sys_rx_buffer_consumed(handle: usize) -> Result<(), ()> {
+	kernel_function!(__sys_rx_buffer_consumed(handle))
 }
 
 #[cfg(not(feature = "newlib"))]
@@ -224,11 +231,36 @@ pub extern "C" fn sys_lseek(fd: i32, offset: isize, whence: i32) -> isize {
 	kernel_function!(__sys_lseek(fd, offset, whence))
 }
 
-fn __sys_stat(file: *const u8, st: usize) -> i32 {
-	unsafe { SYS.stat(file, st) }
+fn __sys_stat(file: *const u8, st: usize) -> isize {
+        unsafe { SYS.stat(file, st) }
 }
 
 #[no_mangle]
-pub extern "C" fn sys_stat(file: *const u8, st: usize) -> i32 {
-	kernel_function!(__sys_stat(file, st))
+pub extern "C" fn sys_stat(file: *const u8, st: usize) -> isize {
+        kernel_function!(__sys_stat(file, st))
 }
+
+fn __sys_readlink(pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+        unsafe { SYS.readlink(pathname, buf, len) }
+}
+#[no_mangle]
+pub extern "C" fn sys_readlink(pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+        kernel_function!(__sys_readlink(pathname, buf, len))
+}
+
+fn __sys_fstat(fd: i32, st: usize) -> isize {
+        unsafe { SYS.fstat(fd, st) }
+}
+#[no_mangle]
+pub extern "C" fn sys_fstat(fd: i32, st: usize) -> isize {
+        kernel_function!(__sys_fstat(fd, st))
+}
+
+fn __sys_openat(dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+        unsafe { SYS.openat(dirfd, pathname, flags) }
+}
+#[no_mangle]
+pub extern "C" fn sys_openat(dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+        kernel_function!(__sys_openat(dirfd, pathname, flags))
+}
+
