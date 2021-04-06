@@ -398,6 +398,7 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	push_auxv(AT_PLATFORM, auxv_platform_ptr as u64);
 
 
+/*
 	// DEBUG
 	//loop {}
 	// Push env var pointers to the stack in reverse order. Starting with null.
@@ -419,17 +420,15 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 			);
 		}
 	}
+*/
 
 
 	// Clear value in rdx and jump to entry point.
 	unsafe {
 		asm!(
 		    "xor rdx, rdx",
-		    "mov rax, [{0}]",
-		    "jmp rax",
+		    "jmp {0}",
 		    in(reg) app_entry_point,
-		    out("rdx") _,
-		    out("rax") _
 		);
 	}
 }
