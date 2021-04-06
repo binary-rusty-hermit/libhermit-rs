@@ -49,6 +49,10 @@
 )]
 #![cfg_attr(target_os = "hermit", cfg_attr(test, no_main))]
 
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![feature(asm)]
+
 // EXTERNAL CRATES
 #[macro_use]
 extern crate alloc;
@@ -101,6 +105,41 @@ mod scheduler;
 mod synch;
 mod syscalls;
 mod util;
+
+// Binary application system variables etc.
+//use std::env;
+//use std::ffi::CString;
+use alloc::vec::Vec;
+use alloc::string::String;
+
+/* Elf ABI */
+const AT_NULL: u64         =  0;
+const AT_IGNORE: u64       =  1;
+const AT_EXECFD: u64       =  2;
+const AT_PHDR: u64         =  3;
+const AT_PHENT: u64        =  4;
+const AT_PHNUM: u64        =  5;
+const AT_PAGESZ: u64       =  6;
+const AT_BASE: u64         =  7;
+const AT_FLAGS: u64        =  8;
+const AT_ENTRY: u64        =  9;
+const AT_NOTELF: u64       = 10;
+const AT_UID: u64          = 11;
+const AT_EUID: u64         = 12;
+const AT_GID: u64          = 13;
+const AT_EGID: u64         = 14;
+const AT_PLATFORM: u64     = 15;
+const AT_HWCAP: u64        = 16;
+const AT_CLKTCK: u64       = 17;
+const AT_DCACHEBSIZE: u64  = 19;
+const AT_ICACHEBSIZE: u64  = 20;
+const AT_UCACHEBSIZE: u64  = 21;
+const AT_SECURE: u64       = 23;
+const AT_RANDOM: u64       = 25;
+const AT_EXECFN: u64       = 31;
+const AT_SYSINFO_EHDR: u64 = 33;
+const AT_SYSINFO: u64      = 32;
+// End of binary application specific
 
 #[doc(hidden)]
 pub fn _print(args: ::core::fmt::Arguments) {
@@ -256,6 +295,145 @@ fn has_ipdevice() -> bool {
 	arch::x86_64::kernel::has_ipdevice()
 }
 
+// Push ELF auxiliary vectors to the stack
+#[inline(always)]
+fn push_auxv(at_type: u64, at_value: u64) {
+        unsafe {
+                asm!(
+                     "push {0}",
+                     "push {1}",
+                     in(reg) at_value,
+                     in(reg) at_type
+                );
+        }
+}
+
+// Initialise values and load the binary application.
+fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> () {
+	// DEBUG
+	println!("Init binary");
+	// Get boot info.
+	let app_size = environment::get_app_size();
+	let app_start = environment::get_app_start();
+	let app_entry_point = environment::get_app_entry_point();
+	let app_ehdr_phoff = environment::get_app_ehdr_phoff();
+	let app_ehdr_phnum = environment::get_app_ehdr_phnum();
+	let app_ehdr_phentsize = environment::get_app_ehdr_phentsize();
+
+	let mut auxv_platform = format!("x86_64").as_bytes().to_vec();
+	auxv_platform.push(0);
+	let auxv_platform_ptr = auxv_platform.as_ptr();
+
+	// DEBUG
+	println!("app_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
+		, app_size, app_start, app_entry_point);
+	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
+		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
+	println!("auxv_platform: {:?}", auxv_platform);
+
+	// Get the number of command line args and env vars
+	let libc_argc = argc - 1;
+
+	// Create vector of CString pointers to env vars.
+	let mut ptr = environ;
+	let mut envc = 0;
+	let mut env_vars_ptr: Vec<_> = Vec::new();
+
+	unsafe {
+		while *ptr != core::ptr::null() {
+			envc += 1;
+			ptr = environ.offset(envc);
+			env_vars_ptr.push(environ.offset(envc));
+			// DEBUG
+			println!("envc: {}\nptr: {:?}", envc, *ptr);
+		}
+	}
+	env_vars_ptr.push(core::ptr::null());
+
+	println!("libc_argc: {}\nenvc: {}", libc_argc, envc);
+	println!("env_vars_ptr: {:?}", env_vars_ptr);
+
+	// Create vector of CString pointers to argv elements.
+	let mut ptr = argv;
+	let mut argv_ptr: Vec<_> = Vec::new();
+
+	for i in 0..libc_argc {
+		unsafe {
+			argv_ptr.push(argv.offset(i as isize));
+		}
+	}
+	argv_ptr.push(core::ptr::null());
+
+	println!("argv_ptr: {:?}", argv_ptr);
+
+	println!("Binary loader");
+
+	/* auxv */
+	push_auxv(AT_NULL, 0x0);
+	push_auxv(AT_IGNORE, 0x0);
+	push_auxv(AT_EXECFD, 0x0);
+	push_auxv(AT_PHDR, app_start as u64 + app_ehdr_phoff as u64);
+	push_auxv(AT_PHNUM, app_ehdr_phnum as u64);
+	push_auxv(AT_PHENT, app_ehdr_phentsize as u64);
+	push_auxv(AT_RANDOM, app_start as u64);
+	push_auxv(AT_BASE, 0x0);
+	push_auxv(AT_SYSINFO_EHDR, 0x0);
+	push_auxv(AT_SYSINFO, 0x0);
+	push_auxv(AT_PAGESZ, 4096);
+	push_auxv(AT_HWCAP, 0x0);
+	push_auxv(AT_CLKTCK, 0x64); // mimic Linux
+	push_auxv(AT_FLAGS, 0x0);
+	push_auxv(AT_ENTRY, app_entry_point as u64);
+	push_auxv(AT_UID, 0x0);
+	push_auxv(AT_EUID, 0x0);
+	push_auxv(AT_GID, 0x0);
+	push_auxv(AT_EGID, 0x0);
+	push_auxv(AT_SECURE, 0x0);
+	push_auxv(AT_SYSINFO, 0x0);
+	push_auxv(AT_EXECFN, 0x0);
+	push_auxv(AT_DCACHEBSIZE, 0x0);
+	push_auxv(AT_ICACHEBSIZE, 0x0);
+	push_auxv(AT_UCACHEBSIZE, 0x0);
+	push_auxv(AT_NOTELF, 0x0);
+	push_auxv(AT_PLATFORM, auxv_platform_ptr as u64);
+
+
+	// DEBUG
+	//loop {}
+	// Push env var pointers to the stack in reverse order. Starting with null.
+	for env_p in env_vars_ptr.iter().rev() {
+		unsafe {
+			asm!(
+			    "push {0}",
+			    in(reg) env_p
+			);
+		}
+	}
+
+	// Push argv pointers to the stack in reverse order. Starting with null.
+	for argv_p in argv_ptr.iter().rev() {
+		unsafe {
+			asm!(
+			    "push {0}",
+			    in(reg) argv_p
+			);
+		}
+	}
+
+
+	// Clear value in rdx and jump to entry point.
+	unsafe {
+		asm!(
+		    "xor rdx, rdx",
+		    "mov rax, [{0}]",
+		    "jmp rax",
+		    in(reg) app_entry_point,
+		    out("rdx") _,
+		    out("rax") _
+		);
+	}
+}
+
 /// Entry point of a kernel thread, which initialize the libos
 #[cfg(target_os = "hermit")]
 extern "C" fn initd(_arg: usize) {
@@ -300,7 +478,8 @@ extern "C" fn initd(_arg: usize) {
 	#[cfg(not(test))]
 	unsafe {
 		// And finally start the application.
-		runtime_entry(argc, argv, environ)
+		init_binary(argc, argv, environ)
+		//runtime_entry(argc, argv, environ)
 	}
 	#[cfg(test)]
 	test_main();
