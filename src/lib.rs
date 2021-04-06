@@ -54,7 +54,6 @@
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
-#![feature(asm)]
 
 // EXTERNAL CRATES
 #[macro_use]
