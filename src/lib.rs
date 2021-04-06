@@ -354,7 +354,6 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	println!("env_vars_ptr: {:?}", env_vars_ptr);
 
 	// Create vector of CString pointers to argv elements.
-	let mut ptr = argv;
 	let mut argv_ptr: Vec<_> = Vec::new();
 
 	for i in 0..libc_argc {
