@@ -5,7 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::{mem, ptr, slice};
+use alloc::prelude::v1::Box;
+use alloc::vec::Vec;
+use core::mem;
 
 #[cfg(target_arch = "x86_64")]
 use x86::io::*;
@@ -28,6 +30,10 @@ const UHYVE_PORT_LSEEK: u16 = 0x580;
 const UHYVE_PORT_CMDSIZE: u16 = 0x740;
 const UHYVE_PORT_CMDVAL: u16 = 0x780;
 const UHYVE_PORT_UNLINK: u16 = 0x840;
+const UHYVE_PORT_READLINK: u16 = 0x880;
+const UHYVE_PORT_FSTAT: u16 = 0x900;
+const UHYVE_PORT_STAT: u16 = 0x940;
+const UHYVE_PORT_OPENAT: u16 = 0x980;
 
 #[cfg(feature = "newlib")]
 extern "C" {
@@ -185,6 +191,102 @@ impl SysLseek {
 	}
 }
 
+#[repr(C, packed)]
+struct SysReadlink {
+        pathname: PhysAddr,
+        buf: *mut u8,
+        len: usize,
+        ret: isize,
+}
+
+impl SysReadlink {
+        fn new(pathname: VirtAddr, buf: *mut u8, len: usize) -> SysReadlink {
+                SysReadlink {
+                        pathname: paging::virtual_to_physical(pathname),
+                        buf,
+                        len,
+                        ret: -1,
+                }
+        }
+}
+
+#[repr(C)]
+struct timespec {
+    pub tv_sec: i64,
+    pub tv_nsec: i32,
+}
+
+#[repr(C)]
+struct stat {
+    pub st_dev: u64,
+    pub st_ino: u64,
+    pub st_nlink: u64,
+    pub st_mode: u32,
+    pub st_uid: u32,
+    pub st_gid: u32,
+    pub st_rdev: u64,
+    pub st_size: i64,
+    pub st_blksize: i32,
+    pub st_blocks: i64,
+    pub st_atim: timespec,
+    pub st_mtim: timespec,
+    pub st_ctim: timespec,
+    // some fields omitted
+}
+
+#[repr(C, packed)]
+struct SysFstat {
+        fd: i32,
+        st: *mut stat,
+        ret: i32,
+}
+
+impl SysFstat {
+        fn new(fd: i32, st: usize) -> SysFstat {
+                SysFstat {
+                        fd,
+                        st: st as *mut stat,
+                        ret: -1,
+                }
+        }
+}
+
+#[repr(C, packed)]
+struct SysStat {
+        name: PhysAddr,
+        st: *mut stat,
+        ret: i32,
+}
+
+impl SysStat {
+        fn new(name: VirtAddr, st: usize) -> SysStat {
+                SysStat {
+                        name: paging::virtual_to_physical(name),
+                        st: st as *mut stat,
+                        ret: -1,
+                }
+        }
+}
+
+#[repr(C, packed)]
+struct SysOpenat {
+        dirfd: i32,
+        pathname: PhysAddr,
+	flags: i32,
+        ret: i32,
+}
+
+impl SysOpenat {
+	fn new(dirfd: i32, pathname: VirtAddr, flags: i32) -> SysOpenat {
+                SysOpenat {
+			dirfd,
+                        pathname: paging::virtual_to_physical(pathname),
+                        flags,
+                        ret: -1,
+                }
+        }
+}
+
 pub struct Uhyve;
 
 impl SyscallInterface for Uhyve {
@@ -215,78 +317,48 @@ impl SyscallInterface for Uhyve {
 	/// ToDo: Add an Errors section - What happens when e.g. malloc fails, how is that handled (currently it isn't)
 	#[cfg(target_os = "hermit")]
 	fn get_application_parameters(&self) -> (i32, *const *const u8, *const *const u8) {
-		//FIXME: Determine how to make this safer, check return values of malloc etc
-		// and then remove the unsafe block and only wrap the parts where it is needed
-		unsafe {
-			// determine the number of arguments and environment variables
-			let mut syscmdsize = SysCmdsize::new();
-			uhyve_send(UHYVE_PORT_CMDSIZE, &mut syscmdsize);
+		// determine the number of arguments and environment variables
+		let mut syscmdsize = SysCmdsize::new();
+		uhyve_send(UHYVE_PORT_CMDSIZE, &mut syscmdsize);
 
-			// create array to receive all arguments
-			let argv_raw = crate::__sys_malloc(
-				syscmdsize.argc as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			) as *mut *const u8;
-			let argv_phy_raw = crate::__sys_malloc(
-				syscmdsize.argc as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			) as *mut *const u8;
-			let argv = slice::from_raw_parts_mut(argv_raw, syscmdsize.argc as usize);
-			let argv_phy = slice::from_raw_parts_mut(argv_phy_raw, syscmdsize.argc as usize);
-			for i in 0..syscmdsize.argc as usize {
-				argv[i] = crate::__sys_malloc(
-					syscmdsize.argsz[i] as usize * mem::size_of::<*const u8>(),
-					1,
-				);
-				argv_phy[i] =
-					paging::virtual_to_physical(VirtAddr(argv[i] as u64)).as_u64() as *const u8;
-			}
-
-			// create array to receive the environment
-			let env_raw = crate::__sys_malloc(
-				(syscmdsize.envc + 1) as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			) as *mut *const u8;
-			let env_phy_raw = crate::__sys_malloc(
-				(syscmdsize.envc + 1) as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			) as *mut *const u8;
-			let env = slice::from_raw_parts_mut(env_raw, (syscmdsize.envc + 1) as usize);
-			let env_phy = slice::from_raw_parts_mut(env_phy_raw, (syscmdsize.envc + 1) as usize);
-			for i in 0..syscmdsize.envc as usize {
-				env[i] = crate::__sys_malloc(
-					syscmdsize.envsz[i] as usize * mem::size_of::<*const u8>(),
-					1,
-				);
-				env_phy[i] =
-					paging::virtual_to_physical(VirtAddr(env[i] as u64)).as_u64() as *const u8;
-			}
-			env[syscmdsize.envc as usize] = ptr::null_mut();
-			env_phy[syscmdsize.envc as usize] = ptr::null_mut();
-
-			// ask uhyve for the environment
-			let mut syscmdval =
-				SysCmdval::new(VirtAddr(argv_phy_raw as u64), VirtAddr(env_phy_raw as u64));
-			uhyve_send(UHYVE_PORT_CMDVAL, &mut syscmdval);
-
-			// free temporary array
-			crate::__sys_free(
-				argv_phy_raw as *mut u8,
-				syscmdsize.argc as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			);
-			crate::__sys_free(
-				env_phy_raw as *mut u8,
-				(syscmdsize.envc + 1) as usize * mem::size_of::<*const u8>(),
-				mem::size_of::<*const u8>(),
-			);
-
-			(
-				syscmdsize.argc,
-				argv_raw as *const *const u8,
-				env_raw as *const *const u8,
-			)
+		// create array to receive all arguments
+		let mut argv = Box::new(Vec::with_capacity(syscmdsize.argc as usize));
+		let mut argv_phy = Vec::with_capacity(syscmdsize.argc as usize);
+		for i in 0..syscmdsize.argc as usize {
+			argv.push(crate::__sys_malloc(
+				syscmdsize.argsz[i] as usize * mem::size_of::<u8>(),
+				1,
+			));
+			argv_phy
+				.push(paging::virtual_to_physical(VirtAddr(argv[i] as u64)).as_u64() as *const u8);
 		}
+
+		// create array to receive the environment
+		let mut env = Box::new(Vec::with_capacity(syscmdsize.envc as usize + 1));
+		let mut env_phy = Vec::with_capacity(syscmdsize.envc as usize + 1);
+		for i in 0..syscmdsize.envc as usize {
+			env.push(crate::__sys_malloc(
+				syscmdsize.envsz[i] as usize * mem::size_of::<u8>(),
+				1,
+			));
+			env_phy
+				.push(paging::virtual_to_physical(VirtAddr(env[i] as u64)).as_u64() as *const u8);
+		}
+
+		// ask uhyve for the environment
+		let mut syscmdval = SysCmdval::new(
+			VirtAddr(argv_phy.as_ptr() as u64),
+			VirtAddr(env_phy.as_ptr() as u64),
+		);
+		uhyve_send(UHYVE_PORT_CMDVAL, &mut syscmdval);
+
+		let (argv_ptr, _, _) = argv.into_raw_parts();
+		let (env_ptr, _, _) = env.into_raw_parts();
+		(
+			syscmdsize.argc,
+			argv_ptr as *const *const u8,
+			env_ptr as *const *const u8,
+		)
 	}
 
 	fn shutdown(&self, arg: i32) -> ! {
@@ -356,4 +428,37 @@ impl SyscallInterface for Uhyve {
 
 		syslseek.offset
 	}
+
+	fn readlink(&self, pathname: *const u8, buf: *mut u8, len: usize) -> isize {
+                let mut sysreadlink = SysReadlink::new(VirtAddr(pathname as u64), buf, len);
+                uhyve_send(UHYVE_PORT_READLINK, &mut sysreadlink);
+
+                sysreadlink.ret
+        }
+
+        fn fstat(&self, fd: i32, st: usize) -> isize {
+                let mut sysfstat = SysFstat::new(fd, st);
+
+                uhyve_send(UHYVE_PORT_FSTAT, &mut sysfstat);
+
+                sysfstat.ret as isize
+
+        }
+
+        fn stat(&self, name: *const u8, st: usize) -> isize {
+                let mut sysstat = SysStat::new(VirtAddr(name as u64), st);
+
+                uhyve_send(UHYVE_PORT_STAT, &mut sysstat);
+
+                sysstat.ret as isize
+
+        }
+
+	fn openat(&self, dirfd: i32, pathname: *const u8, flags: i32) -> isize {
+		let mut sysopenat = SysOpenat::new(dirfd, VirtAddr(pathname as u64), flags);
+		uhyve_send(UHYVE_PORT_OPENAT, &mut sysopenat);
+
+		sysopenat.ret as isize
+	}
+
 }

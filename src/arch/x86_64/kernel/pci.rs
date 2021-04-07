@@ -7,10 +7,14 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::arch::x86_64::kernel::pci_ids::{CLASSES, VENDORS};
-use crate::arch::x86_64::kernel::virtio;
-use crate::arch::x86_64::kernel::virtio_fs::VirtioFsDriver;
-use crate::arch::x86_64::kernel::virtio_net::VirtioNetDriver;
 use crate::arch::x86_64::mm::{PhysAddr, VirtAddr};
+use crate::collections::irqsave;
+use crate::drivers::net::rtl8139::{self, RTL8139Driver};
+use crate::drivers::net::virtio_net::VirtioNetDriver;
+use crate::drivers::net::NetworkInterface;
+use crate::drivers::virtio::depr::virtio_fs::VirtioFsDriver;
+use crate::drivers::virtio::transport::pci as pci_virtio;
+use crate::drivers::virtio::transport::pci::VirtioDriver;
 use crate::synch::spinlock::SpinlockIrqSave;
 use crate::x86::io::*;
 use alloc::vec::Vec;
@@ -125,13 +129,15 @@ pub struct MemoryBar {
 
 pub enum PciDriver<'a> {
 	VirtioFs(SpinlockIrqSave<VirtioFsDriver<'a>>),
-	VirtioNet(SpinlockIrqSave<VirtioNetDriver<'a>>),
+	VirtioNet(SpinlockIrqSave<VirtioNetDriver>),
+	RTL8139Net(SpinlockIrqSave<RTL8139Driver>),
 }
 
 impl<'a> PciDriver<'a> {
-	fn get_network_driver(&self) -> Option<&SpinlockIrqSave<VirtioNetDriver<'a>>> {
+	fn get_network_driver(&self) -> Option<&SpinlockIrqSave<dyn NetworkInterface>> {
 		match self {
 			Self::VirtioNet(drv) => Some(drv),
+			Self::RTL8139Net(drv) => Some(drv),
 			_ => None,
 		}
 	}
@@ -149,7 +155,7 @@ pub fn register_driver(drv: PciDriver<'static>) {
 	}
 }
 
-pub fn get_network_driver() -> Option<&'static SpinlockIrqSave<VirtioNetDriver<'static>>> {
+pub fn get_network_driver() -> Option<&'static SpinlockIrqSave<dyn NetworkInterface>> {
 	unsafe { PCI_DRIVERS.iter().find_map(|drv| drv.get_network_driver()) }
 }
 
@@ -444,6 +450,8 @@ impl fmt::Display for PciAdapter {
 	}
 }
 
+/// Returns the value (indicated by bus, device and register) of the pci
+/// configuration space.
 pub fn read_config(bus: u8, device: u8, register: u32) -> u32 {
 	let address =
 		PCI_CONFIG_ADDRESS_ENABLE | u32::from(bus) << 16 | u32::from(device) << 11 | register;
@@ -496,17 +504,54 @@ pub fn init() {
 }
 
 pub fn init_drivers() {
+	let mut nic_available = false;
+
 	// virtio: 4.1.2 PCI Device Discovery
-	for adapter in unsafe { PCI_ADAPTERS.iter() } {
-		if adapter.vendor_id == 0x1AF4 && adapter.device_id >= 0x1000 && adapter.device_id <= 0x107F
-		{
+	irqsave(|| {
+		for adapter in unsafe {
+			PCI_ADAPTERS
+				.iter()
+				.filter(|x| x.vendor_id == 0x1AF4 && x.device_id >= 0x1000 && x.device_id <= 0x107F)
+		} {
 			info!(
-				"Found virtio device with device id 0x{:x}",
+				"Found virtio network device with device id 0x{:x}",
 				adapter.device_id
 			);
-			virtio::init_virtio_device(adapter);
+
+			// This weird match and back to match and then match driver is needed
+			// in order to let the compiler know, that we are giving him a static driver struct.
+			match pci_virtio::init_device(&adapter) {
+				Ok(drv) => match drv {
+					VirtioDriver::Network(drv) => {
+						nic_available = true;
+						register_driver(PciDriver::VirtioNet(SpinlockIrqSave::new(drv)))
+					}
+					VirtioDriver::FileSystem => (), // Filesystem is pushed to the driver struct inside init_device()
+				},
+				Err(_) => (), // could have an info which driver failed
+			}
 		}
-	}
+
+		// do we already found a network interface?
+		if !nic_available {
+			// Searching for Realtek RTL8139, which is supported by Qemu
+			for adapter in unsafe {
+				PCI_ADAPTERS.iter().filter(|x| {
+					x.vendor_id == 0x10ec && x.device_id >= 0x8138 && x.device_id <= 0x8139
+				})
+			} {
+				info!(
+					"Found Realtek network device with device id 0x{:x}",
+					adapter.device_id
+				);
+
+				match rtl8139::init_device(&adapter) {
+					Ok(drv) => register_driver(PciDriver::RTL8139Net(SpinlockIrqSave::new(drv))),
+					Err(_) => (), // could have an info which driver failed
+				}
+			}
+		}
+	});
 }
 
 pub fn print_information() {
@@ -517,4 +562,21 @@ pub fn print_information() {
 	}
 
 	infofooter!();
+}
+
+/// A module containg PCI specifc errors
+///
+/// Errors include...
+pub mod error {
+	/// An enum of PciErrors
+	/// typically carrying the device's id as an u16.
+	#[derive(Debug)]
+	pub enum PciError {
+		General(u16),
+		NoBar(u16),
+		NoCapPtr(u16),
+		BadCapPtr(u16),
+		NoBarForCap(u16),
+		NoVirtioCaps(u16),
+	}
 }
