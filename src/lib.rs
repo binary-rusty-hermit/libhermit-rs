@@ -301,7 +301,6 @@ fn has_ipdevice() -> bool {
 	arch::x86_64::kernel::has_ipdevice()
 }
 
-/*
 // Push ELF auxiliary vectors to the stack
 #[inline(always)]
 fn push_auxv(at_type: u64, at_value: u64) {
@@ -314,7 +313,6 @@ fn push_auxv(at_type: u64, at_value: u64) {
                 );
         }
 }
-*/ // Commented out as this is now in-line
 
 // Initialise values and load the binary application.
 fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> () {
@@ -338,6 +336,7 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
 		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
 	println!("auxv_platform: {:?}", auxv_platform);
+	println!("auxv_platform_ptr: 0x{:x}", auxv_platform_ptr as u64);
 
 	// Get the number of command line args and env vars
 	let libc_argc = argc - 1;
@@ -360,6 +359,9 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 
 	println!("libc_argc: {}\nenvc: {}", libc_argc, envc);
 	println!("env_vars_ptr: {:?}", env_vars_ptr);
+	for envp in env_vars_ptr.iter() {
+		println!("envp: {:?}", envp);
+	}
 
 	// Create vector of CString pointers to argv elements.
 	let mut argv_ptr: Vec<_> = Vec::new();
@@ -376,173 +378,44 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	println!("Binary loader");
 
 	/* auxv */
-        unsafe {
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_NULL
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_IGNORE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_EXECFD
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) app_start as u64 + app_ehdr_phoff as u64,
-                     in(reg) AT_PHDR
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) app_ehdr_phnum as u64
-                     in(reg) AT_PHNUM
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) app_ehdr_phentsize as u64,
-                     in(reg) AT_PHENT
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) app_start as u64,
-                     in(reg) AT_RANDOM
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_BASE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_SYSINFO_EHDR
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_SYSINFO
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 4096,
-                     in(reg) AT_PAGESZ
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_HWCAP
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x64,
-                     in(reg) AT_CLKTCK
-                ); // mimix Linux
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_FLAGS
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) app_entry_point as u64,
-                     in(reg) AT_ENTRY
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_UID
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_EUID
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_GID
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_EGID
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_SECURE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_SYSINFO
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_EXECFN
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_DCACHEBSIZE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_ICACHEBSIZE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_UCACHEBSIZE
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) 0x0,
-                     in(reg) AT_NOTELF
-                );
-                asm!(
-                     "push {0}",
-                     "push {1}",
-                     in(reg) auxv_platform_ptr as u64,
-                     in(reg) AT_PLATFORM
-                );
-	}
-
+	push_auxv(AT_NULL, 0x0);
+	push_auxv(AT_IGNORE, 0x0);
+	push_auxv(AT_EXECFD, 0x0);
+	push_auxv(AT_PHDR, app_start as u64 + app_ehdr_phoff as u64);
+	push_auxv(AT_PHNUM, app_ehdr_phnum as u64);
+	push_auxv(AT_PHENT, app_ehdr_phentsize as u64);
+	push_auxv(AT_RANDOM, app_start as u64);
+	push_auxv(AT_BASE, 0x0);
+	push_auxv(AT_SYSINFO_EHDR, 0x0);
+	push_auxv(AT_SYSINFO, 0x0);
+	push_auxv(AT_PAGESZ, 4096);
+	push_auxv(AT_HWCAP, 0x0);
+	push_auxv(AT_CLKTCK, 0x64); // mimic Linux
+	push_auxv(AT_FLAGS, 0x0);
+	push_auxv(AT_ENTRY, app_entry_point as u64);
+	push_auxv(AT_UID, 0x0);
+	push_auxv(AT_EUID, 0x0);
+	push_auxv(AT_GID, 0x0);
+	push_auxv(AT_EGID, 0x0);
+	push_auxv(AT_SECURE, 0x0);
+	push_auxv(AT_SYSINFO, 0x0);
+	push_auxv(AT_EXECFN, 0x0);
+	push_auxv(AT_DCACHEBSIZE, 0x0);
+	push_auxv(AT_ICACHEBSIZE, 0x0);
+	push_auxv(AT_UCACHEBSIZE, 0x0);
+	push_auxv(AT_NOTELF, 0x0);
+	push_auxv(AT_PLATFORM, auxv_platform_ptr as u64);
 
 /*
+	// DEBUG
+	println!("*** Before Push ***\napp_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
+		, app_size, app_start, app_entry_point);
+	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
+		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
+	println!("auxv_platform: {:?}", auxv_platform);
+	println!("AT_NULL: {}", AT_NULL);
+*/
+
 	// DEBUG
 	//loop {}
 	// Push env var pointers to the stack in reverse order. Starting with null.
@@ -564,8 +437,44 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 			);
 		}
 	}
+
+/*
+	// Fake no env vars or argv by pushing null twice to stack.
+	unsafe {
+		asm!(
+		    "push {0}",
+		    "push {0}",
+		    in(reg) 0x0
+		);
+	}
 */
 
+/*
+	// DEBUG
+	println!("*** After Push ***\napp_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
+		, app_size, app_start, app_entry_point);
+	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
+		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
+	println!("auxv_platform: {:?}", auxv_platform);
+	println!("AT_NULL: {}", AT_NULL);
+*/
+
+	// DEBUG
+	// Print out the stack
+	let mut stack_ptr: *const i64;
+	unsafe {
+		asm!(
+		    "mov {0}, rsp",
+		    out(reg) stack_ptr
+		);
+	}
+	//println!("stack_ptr: {}", stack_ptr);
+	//println!("stack_ptr: 0x{:x}", stack_ptr);
+	for i in 0..49 {
+		unsafe {
+			println!("stack value {}: 0x{:x}", i, *stack_ptr.offset(i) as u64);
+		}
+	}
 
 	// Clear value in rdx and jump to entry point.
 	unsafe {
