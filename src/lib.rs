@@ -316,8 +316,6 @@ fn push_auxv(at_type: u64, at_value: u64) {
 
 // Initialise values and load the binary application.
 fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> () {
-	// DEBUG
-	println!("Init binary");
 	// Get boot info.
 	let app_size = environment::get_app_size();
 	let app_start = environment::get_app_start();
@@ -330,56 +328,47 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	auxv_platform.push(0);
 	let auxv_platform_ptr = auxv_platform.as_ptr();
 
-	// DEBUG
-	println!("app_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
-		, app_size, app_start, app_entry_point);
-	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
-		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
-	println!("auxv_platform: {:?}", auxv_platform);
-	println!("auxv_platform_ptr: 0x{:x}", auxv_platform_ptr as u64);
-
 	// Get the number of command line args and env vars
 	let libc_argc = argc - 1;
 
-	// Create vector of CString pointers to env vars.
+	// Create vector pointers to arg and env vars
 	let mut ptr = environ;
 	let mut envc = 0;
-	let mut env_vars_ptr: Vec<_> = Vec::new();
+	let mut vars_ptr: Vec<_> = Vec::new();
 
+	// Push argvs first
+	for i in 1..libc_argc {
+		unsafe {
+			vars_ptr.push(*argv.offset(i as isize) as *const u64);
+		}
+	}
+	vars_ptr.push(core::ptr::null());
+
+	// Push env vars next
 	unsafe {
 		while *ptr != core::ptr::null() {
-			env_vars_ptr.push(*environ.offset(envc) as *const u64);
+			vars_ptr.push(*environ.offset(envc) as *const u64);
 			// DEBUG
-			println!("envc: {}\nptr: {:?}", envc, *ptr);
+			//println!("envc: {}\nptr: {:?}", envc, *ptr);
 			envc += 1;
 			ptr = &*environ.offset(envc);
 		}
 	}
-	env_vars_ptr.push(core::ptr::null());
-
-	println!("libc_argc: {}\nenvc: {}", libc_argc, envc);
-	println!("env_vars_ptr: {:?}", env_vars_ptr);
-	for envp in env_vars_ptr.iter().rev() {
-		unsafe {
-			println!("envp: {:?}", envp);
-			//println!("*envp: {:?}", *envp);
-			//println!("**envp: {:?}", **envp);
-		}
-	}
+	vars_ptr.push(core::ptr::null());
 
 	// Create vector of CString pointers to argv elements.
-	let mut argv_ptr: Vec<_> = Vec::new();
+	//let mut argv_ptr: Vec<_> = Vec::new();
 
-	for i in 0..libc_argc {
+/*
+	for i in 1..libc_argc {
 		unsafe {
 			argv_ptr.push(*argv.offset(i as isize) as *const u64);
 		}
 	}
 	argv_ptr.push(core::ptr::null());
+*/
 
-	println!("argv_ptr: {:?}", argv_ptr);
-
-	println!("Binary loader");
+	println!("vars_ptr: {:?}", vars_ptr);
 
 	/* auxv */
 	push_auxv(AT_NULL, 0x0);
@@ -410,48 +399,19 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	push_auxv(AT_NOTELF, 0x0);
 	push_auxv(AT_PLATFORM, auxv_platform_ptr as u64);
 
-	// DEBUG
-	//loop {}
 	// Push env var pointers to the stack in reverse order. Starting with null.
-	for env_p in env_vars_ptr.iter().rev() {
+	for var_p in vars_ptr.iter().rev() {
 		unsafe {
 			asm!(
 			    "push {0}",
-			    in(reg) *env_p as u64
+			    in(reg) *var_p as u64
 			);
 		}
 	}
 
-	// Push argv pointers to the stack in reverse order. Starting with null.
-	for argv_p in argv_ptr.iter().rev() {
-		unsafe {
-			asm!(
-			    "push {0}",
-			    in(reg) *argv_p as u64
-			);
-		}
-	}
-
-/*
 	// DEBUG
-	// Print out the stack
-	let mut stack_ptr: *const i64;
-	unsafe {
-		asm!(
-		    "mov {0}, rsp",
-		    out(reg) stack_ptr
-		);
-	}
-	for i in 0..80 {
-		unsafe {
-			println!("stack value 0x{:x}: 0x{:x}"
-				, stack_ptr.offset(i) as u64
-				, *stack_ptr.offset(i) as u64);
-		}
-	}
-*/
+	//println!("app_entry_point: 0x{:x}", app_entry_point as u64);
 
-	loop {}
 	// Clear value in rdx and jump to entry point.
 	unsafe {
 		asm!(
