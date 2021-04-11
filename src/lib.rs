@@ -348,19 +348,23 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 
 	unsafe {
 		while *ptr != core::ptr::null() {
-			envc += 1;
-			ptr = environ.offset(envc);
-			env_vars_ptr.push(environ.offset(envc));
+			env_vars_ptr.push(*environ.offset(envc) as *const u64);
 			// DEBUG
 			println!("envc: {}\nptr: {:?}", envc, *ptr);
+			envc += 1;
+			ptr = &*environ.offset(envc);
 		}
 	}
 	env_vars_ptr.push(core::ptr::null());
 
 	println!("libc_argc: {}\nenvc: {}", libc_argc, envc);
 	println!("env_vars_ptr: {:?}", env_vars_ptr);
-	for envp in env_vars_ptr.iter() {
-		println!("envp: {:?}", envp);
+	for envp in env_vars_ptr.iter().rev() {
+		unsafe {
+			println!("envp: {:?}", envp);
+			//println!("*envp: {:?}", *envp);
+			//println!("**envp: {:?}", **envp);
+		}
 	}
 
 	// Create vector of CString pointers to argv elements.
@@ -368,7 +372,7 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 
 	for i in 0..libc_argc {
 		unsafe {
-			argv_ptr.push(argv.offset(i as isize));
+			argv_ptr.push(*argv.offset(i as isize) as *const u64);
 		}
 	}
 	argv_ptr.push(core::ptr::null());
@@ -406,16 +410,6 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	push_auxv(AT_NOTELF, 0x0);
 	push_auxv(AT_PLATFORM, auxv_platform_ptr as u64);
 
-/*
-	// DEBUG
-	println!("*** Before Push ***\napp_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
-		, app_size, app_start, app_entry_point);
-	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
-		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
-	println!("auxv_platform: {:?}", auxv_platform);
-	println!("AT_NULL: {}", AT_NULL);
-*/
-
 	// DEBUG
 	//loop {}
 	// Push env var pointers to the stack in reverse order. Starting with null.
@@ -423,7 +417,7 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 		unsafe {
 			asm!(
 			    "push {0}",
-			    in(reg) env_p
+			    in(reg) *env_p as u64
 			);
 		}
 	}
@@ -433,32 +427,12 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 		unsafe {
 			asm!(
 			    "push {0}",
-			    in(reg) argv_p
+			    in(reg) *argv_p as u64
 			);
 		}
 	}
 
 /*
-	// Fake no env vars or argv by pushing null twice to stack.
-	unsafe {
-		asm!(
-		    "push {0}",
-		    "push {0}",
-		    in(reg) 0x0
-		);
-	}
-*/
-
-/*
-	// DEBUG
-	println!("*** After Push ***\napp_size: 0x{:x}\napp_start: 0x{:x}\napp_entry_point: 0x{:x}"
-		, app_size, app_start, app_entry_point);
-	println!("app_ehdr_phoff: {}\napp_ehdr_phnum: {}\napp_ehdr_phentsize: {}"
-		, app_ehdr_phoff, app_ehdr_phnum, app_ehdr_phentsize);
-	println!("auxv_platform: {:?}", auxv_platform);
-	println!("AT_NULL: {}", AT_NULL);
-*/
-
 	// DEBUG
 	// Print out the stack
 	let mut stack_ptr: *const i64;
@@ -468,14 +442,16 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 		    out(reg) stack_ptr
 		);
 	}
-	//println!("stack_ptr: {}", stack_ptr);
-	//println!("stack_ptr: 0x{:x}", stack_ptr);
-	for i in 0..49 {
+	for i in 0..80 {
 		unsafe {
-			println!("stack value {}: 0x{:x}", i, *stack_ptr.offset(i) as u64);
+			println!("stack value 0x{:x}: 0x{:x}"
+				, stack_ptr.offset(i) as u64
+				, *stack_ptr.offset(i) as u64);
 		}
 	}
+*/
 
+	loop {}
 	// Clear value in rdx and jump to entry point.
 	unsafe {
 		asm!(
