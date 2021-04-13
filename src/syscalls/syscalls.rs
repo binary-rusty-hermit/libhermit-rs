@@ -4,7 +4,9 @@ use crate::uname::*;
 use crate::mmap::*;
 use crate::mprotect::*;
 use crate::munmap::*;
-
+use crate::readv::*;
+use crate::writev::*;
+use crate::ioctl::*;
 
 const SYS_READ: usize = 0;
 const SYS_WRITE: usize = 1;
@@ -20,6 +22,9 @@ const SYS_MUNMAP: usize = 11;
 #[cfg(feature = "newlib")]
 const SYS_BRK: usize = 12;
 
+const SYS_IOCTL: usize = 16;
+const SYS_READV: usize = 19;
+const SYS_WRITEV: usize = 20;
 const SYS_EXIT: usize = 60;
 const SYS_UNAME: usize = 63;
 const SYS_READLINK: usize = 89;
@@ -75,13 +80,25 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
                         state.rax = tasks::sys_brk(state.rdi);
                         },
 
+		SYS_IOCTL => {
+                        state.rax = sys_ioctl(state.rdi as i32, state.rsi as i32, state.rdx) as usize;
+                        },
+
+		SYS_READV => {
+                        state.rax = sys_readv(state.rdi as i32, state.rsi, state.rdx as i32) as usize;
+                        },
+
+                SYS_WRITEV => {
+                        state.rax = sys_writev(state.rdi as i32, state.rsi, state.rdx as i32) as usize;
+                        },
+
 		SYS_EXIT => {
                         state.rax = sys_exit(state.rdi as i32);
                         },
 
 		SYS_UNAME => {
                         state.rax = sys_uname(state.rdi as *mut Utsname) as usize;
-                },
+                	},
 
 		SYS_READLINK => {
                         state.rax = sys_readlink(state.rdi as *const u8, state.rsi as *mut u8, state.rdx) as usize;
@@ -93,11 +110,11 @@ pub unsafe extern "C" fn syscall_handler(state: &mut State) {
 
 		SYS_ARCH_PRCTL => {
                         state.rax = sys_arch_prctl(state.rdi, state.rsi as *mut usize);
-                }
+                	},
 
 		SYS_OPENAT => {
                         state.rax = sys_openat(state.rdi as i32, state.rsi as *const u8, state.rdx as i32) as usize;
-                }
+                	},
 
 		 _ => panic!("Rax was: {}, Not implemented", state.rax),
         }

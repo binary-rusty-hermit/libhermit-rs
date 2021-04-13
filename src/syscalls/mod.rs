@@ -45,6 +45,9 @@ pub mod uname;
 pub mod mmap;
 pub mod mprotect;
 pub mod munmap;
+pub mod readv;
+pub mod writev;
+pub mod ioctl;
 
 #[cfg(feature = "newlib")]
 const LWIP_FD_BIT: i32 = 1 << 30;

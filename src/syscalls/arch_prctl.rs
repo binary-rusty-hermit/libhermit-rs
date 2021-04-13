@@ -1,5 +1,8 @@
+use crate::errno::*;
+
 use crate::arch::x86_64::kernel::processor::writefs;
 use crate::arch::x86_64::kernel::processor::readfs;
+use crate::syscalls::SYS;
 
 pub const ARCH_SET_GS: usize = 0x1001;
 pub const ARCH_SET_FS: usize = 0x1002;
@@ -29,7 +32,8 @@ fn __sys_arch_prctl(code: usize, addr: *mut usize) -> usize {
                 },
 
                 _ => {
-                        panic!("Arch_prctl: Code was: {}, addr was: {}", code, addr as usize);
+                        info!("Arch_prctl: option not implemented: {}", code);
+			return -ENOSYS as usize;
                 }
         }
 
