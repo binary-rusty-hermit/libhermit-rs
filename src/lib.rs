@@ -356,28 +356,19 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 	}
 	vars_ptr.push(core::ptr::null());
 
-	// Create vector of CString pointers to argv elements.
-	//let mut argv_ptr: Vec<_> = Vec::new();
-
-/*
-	for i in 1..libc_argc {
-		unsafe {
-			argv_ptr.push(*argv.offset(i as isize) as *const u64);
-		}
-	}
-	argv_ptr.push(core::ptr::null());
-*/
-
+	// DEBUG
 	println!("vars_ptr: {:?}", vars_ptr);
 
 	/* auxv */
 	push_auxv(AT_NULL, 0x0);
 	push_auxv(AT_IGNORE, 0x0);
 	push_auxv(AT_EXECFD, 0x0);
+
 	push_auxv(AT_PHDR, app_start as u64 + app_ehdr_phoff as u64);
 	push_auxv(AT_PHNUM, app_ehdr_phnum as u64);
 	push_auxv(AT_PHENT, app_ehdr_phentsize as u64);
 	push_auxv(AT_RANDOM, app_start as u64);
+
 	push_auxv(AT_BASE, 0x0);
 	push_auxv(AT_SYSINFO_EHDR, 0x0);
 	push_auxv(AT_SYSINFO, 0x0);
@@ -409,15 +400,19 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 		}
 	}
 
-	// DEBUG
-	//println!("app_entry_point: 0x{:x}", app_entry_point as u64);
+	unsafe {
+		asm!(
+		    "push {0}",
+		    in(reg) libc_argc
+		);
+	}
 
 	// Clear value in rdx and jump to entry point.
 	unsafe {
 		asm!(
 		    "xor rdx, rdx",
 		    "jmp {0}",
-		    in(reg) app_entry_point as u64,
+		    in(reg) app_entry_point as u64
 		);
 	}
 }
