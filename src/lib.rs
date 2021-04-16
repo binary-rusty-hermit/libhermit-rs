@@ -407,6 +407,26 @@ fn init_binary(argc: i32, argv: *const *const u8, environ: *const *const u8) -> 
 		);
 	}
 
+	// DEBUG
+	// Print out the stack
+/*
+	let mut stack_ptr: *const i64;
+	unsafe {
+		asm!(
+		    "mov {0}, rsp",
+		    out(reg) stack_ptr
+		);
+	}
+
+	for i in 0..80 {
+		unsafe {
+			println!("stack value 0x{:x}: 0x{:x}"
+				, stack_ptr.offset(i) as u64
+				, *stack_ptr.offset(i) as u64);
+		}
+	}
+*/
+
 	// Clear value in rdx and jump to entry point.
 	unsafe {
 		asm!(
