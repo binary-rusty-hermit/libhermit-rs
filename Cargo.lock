@@ -211,9 +211,9 @@ checksum = "f7fe0bb3479651439c9112f72b6c505038574c9fbb575ed1bf3b797fa39dd564"
 
 [[package]]
 name = "x86"
-version = "0.37.0"
+version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4fd9298cd1b1f88546fc0a5e8faa3354013cd010589299c624fde436aad76cc"
+checksum = "702d51a8a099ea6b47826796377591d2ed47116c7f0454f0d08d1d9872944880"
 dependencies = [
  "bit_field",
  "bitflags",
